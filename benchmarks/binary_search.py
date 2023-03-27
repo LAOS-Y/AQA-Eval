@@ -1,10 +1,11 @@
 import random
 
+
 class BinarySearchEvaluator():
     def __init__(self, min=0, max=100):
         self.min = min
         self.max = max
-            
+
     def init_model(self, model, verbose=False):
         prompt = "You are required to guess the random number which I have just picked between {} and {}.\n" \
                  "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'.\n" \
@@ -19,21 +20,21 @@ class BinarySearchEvaluator():
         reply = model(prompt)
         if verbose:
             print("A: {}".format(reply))
-        
+
         return reply == "OK"
-    
+
     def test_one_time(self, model, verbose=False):
         if not self.init_model(model, verbose):
             return
-        
+
         guess = None
         cnt = 0
         target = random.randint(self.min, self.max)
         prompt = "START"
-        
+
         if verbose:
             print("Picked Random Number: {}".format(target))
-        
+
         while guess != target:
             if verbose:
                 print("Q: {}".format(prompt))
