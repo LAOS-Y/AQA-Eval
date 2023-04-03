@@ -82,7 +82,7 @@ class BinarySearchEvaluator():
             prompt = self.get_prompt(guess, target)
 
         if teacher_forcing:
-            return self.calc_acc(guess_list, teacher_guess_list)
+            return self.calc_err(guess_list, teacher_guess_list)
 
         return len(guess_list)
 
@@ -93,8 +93,8 @@ class BinarySearchEvaluator():
         guess = int(guess)
         return abs(guess - teacher_guess) / (self.max - self.min)
 
-    def calc_acc(self, guess_list, teacher_guess_list):
-        acc_list = [
+    def calc_err(self, guess_list, teacher_guess_list):
+        err_list = [
             1 - self.calc_single_err(i, j) for i, j in zip(guess_list, teacher_guess_list)
         ]
-        return sum(acc_list) / len(acc_list)
+        return sum(err_list) / len(err_list)
