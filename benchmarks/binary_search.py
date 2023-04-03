@@ -86,15 +86,15 @@ class BinarySearchEvaluator():
 
         return len(guess_list)
 
-    def calc_single_acc(self, guess, teacher_guess):
+    def calc_single_err(self, guess, teacher_guess):
         if not self.is_valid(guess):
-            return 0
+            return 1
 
         guess = int(guess)
-        return 1 - abs(guess - teacher_guess) / (self.max - self.min)
+        return abs(guess - teacher_guess) / (self.max - self.min)
 
     def calc_acc(self, guess_list, teacher_guess_list):
         acc_list = [
-            self.calc_single_acc(i, j) for i, j in zip(guess_list, teacher_guess_list)
+            1 - self.calc_single_err(i, j) for i, j in zip(guess_list, teacher_guess_list)
         ]
         return sum(acc_list) / len(acc_list)
