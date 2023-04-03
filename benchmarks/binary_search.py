@@ -21,16 +21,34 @@ class BinarySearchEvaluator():
         if verbose:
             print("A: {}".format(reply))
 
-        return reply == "OK"
+        return reply.strip() == "OK"
 
-    def test_one_time(self, model, verbose=False):
+    def get_prompt(self, guess, target):
+        if guess < target:
+            return "The true number is bigger than this guess"
+        if guess > target:
+            return "The true number is smaller than this guess"
+
+        return "The true number is equal to this guess"
+
+    def is_valid(self, guess):
+        try:
+            guess = int(guess)
+            return self.min <= guess and guess <= self.max
+        except ValueError:
+            return False
+
+    def test_one_time(self, model, verbose=False, teacher_forcing=False):
         if not self.init_model(model, verbose):
-            return
+            raise ValueError("Invalid Reply")
 
         guess = None
-        cnt = 0
+        guess_list = []
+        teacher_guess_list = []
         target = random.randint(self.min, self.max)
         prompt = "START"
+
+        l, r = self.min, self.max
 
         if verbose:
             print("Picked Random Number: {}".format(target))
@@ -38,23 +56,45 @@ class BinarySearchEvaluator():
         while guess != target:
             if verbose:
                 print("Q: {}".format(prompt))
-            
+
             guess = model(prompt)
-            cnt += 1
+            guess_list.append(guess)
+
             if verbose:
                 print("A: {}".format(guess))
 
-            try:
-                guess = int(guess)
-            except ValueError:
-                return
+            if not teacher_forcing and not self.is_valid(guess):
+                raise ValueError(f"Invalid Reply: {guess}")
 
-            
-            if guess < target:
-                prompt = "The true number is bigger than this guess"
-            elif guess > target:
-                prompt = "The true number is smaller than this guess"
-            else:
-                prompt = "The true number is equal to this guess"
+            if teacher_forcing:
+                guess = (l + r) // 2
+                teacher_guess_list.append(guess)
+                model.teacher_force(guess)
 
-        return cnt
+                if target < guess:
+                    r = guess
+                else:
+                    l = guess
+
+                if verbose:
+                    print("Teacher Forcing: {}".format(guess))
+
+            prompt = self.get_prompt(guess, target)
+
+        if teacher_forcing:
+            return self.calc_acc(guess_list, teacher_guess_list)
+
+        return len(guess_list)
+
+    def calc_single_acc(self, guess, teacher_guess):
+        if not self.is_valid(guess):
+            return 0
+
+        guess = int(guess)
+        return 1 - abs(guess - teacher_guess) / (self.max - self.min)
+
+    def calc_acc(self, guess_list, teacher_guess_list):
+        acc_list = [
+            self.calc_single_acc(i, j) for i, j in zip(guess_list, teacher_guess_list)
+        ]
+        return sum(acc_list) / len(acc_list)
