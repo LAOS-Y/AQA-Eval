@@ -30,15 +30,15 @@ class DialogLogger():
                     line += " " * (self.column_width + self.h_space)
                     continue
 
-                # "\n" at the front -> print a blank line
-                if columns[name].startswith("\n"):
-                    columns[name] = columns[name][1:]
-                    line += " " * (self.column_width + self.h_space)
-                    continue
-
                 # If `first_line`, add header, e.g. "Q: ", "A: ", "P1: "
                 # If not `first_line`, add indentation to align with the first line
                 header = f"{name}: " if first_line else (" " * length)
+
+                # "\n" at the front -> print a blank line，possibly with header
+                if columns[name].startswith("\n"):
+                    columns[name] = columns[name][1:]
+                    line += header.ljust(self.column_width + self.h_space)
+                    continue
 
                 columns[name] = header + columns[name]
                 crop = columns[name][:self.column_width].split("\n")[0]
