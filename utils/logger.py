@@ -9,9 +9,11 @@ class DialogLogger():
         self.h_space = h_space
 
     def _multi_column_log(self, print_func, **columns):
-        assert all([name in self.order for name in columns])
+        for name in columns:
+            if name not in self.order:
+                raise ValueError(f"Unknown column: {name}")
 
-        name_lens = OrderedDict(
+        header_lens = OrderedDict(
             [(name, len(name) + 2) for name in self.order if name in columns]
         )
         first_line = True
@@ -19,27 +21,34 @@ class DialogLogger():
         columns = {k: str(v) for k, v in columns.items()}
 
         while columns:
+            # if there are still columns not completed
             line = ""
 
-            for name, length in name_lens.items():
+            for name, length in header_lens.items():
+                # find a completed column -> print a blank line
                 if name not in columns:
                     line += " " * (self.column_width + self.h_space)
                     continue
 
+                # "\n" at the front -> print a blank line
                 if columns[name].startswith("\n"):
                     columns[name] = columns[name][1:]
                     line += " " * (self.column_width + self.h_space)
                     continue
 
+                # If `first_line`, add header, e.g. "Q: ", "A: ", "P1: "
+                # If not `first_line`, add indentation to align with the first line
                 header = f"{name}: " if first_line else (" " * length)
 
                 columns[name] = header + columns[name]
                 crop = columns[name][:self.column_width].split("\n")[0]
                 columns[name] = columns[name][len(crop):]
+                # remove the processed "\n"
                 columns[name] = columns[name][columns[name].startswith("\n"):]
 
                 line += crop.ljust(self.column_width + self.h_space)
 
+                # remove the completed column
                 if not columns[name]:
                     columns.pop(name)
 
