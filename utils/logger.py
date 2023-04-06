@@ -54,7 +54,7 @@ class DialogLogger():
 
             first_line = False
             print_func(line)
-        print_func("------")
+        print_func("-" * self.column_width)
 
     def info(self, **columns):
         self._multi_column_log(logger.info, **columns)
