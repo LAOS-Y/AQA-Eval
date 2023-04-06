@@ -1,12 +1,16 @@
 import random
+from loguru import logger
+
+from utils import DialogLogger
 
 
 class BinarySearchEvaluator():
     def __init__(self, min=0, max=100):
         self.min = min
         self.max = max
+        self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
 
-    def init_model(self, model, verbose=False):
+    def init_model(self, model, teacher_forcing=False):
         prompt = "You are required to guess the random number which I have just picked between {} and {}.\n" \
                  "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'.\n" \
                  "Adjust your guess according to my response.\n" \
@@ -14,13 +18,15 @@ class BinarySearchEvaluator():
                  "Start guessing after receiving 'START' command.\n" \
                  "Stop guessing after receiving 'STOP' command.\n" \
                  "Reply 'OK' if you understand.".format(self.min, self.max)
-        if verbose:
-            print("Q: {}".format(prompt))
+        self.dialog_logger.info(Q=prompt)
 
         reply = model(prompt)
-        if verbose:
-            print("A: {}".format(reply))
+        if teacher_forcing:
+            self.dialog_logger.info(A=reply, T="OK")
+            model.teacher_force("OK")
+            return True
 
+        self.dialog_logger.info(A=reply)
         return reply.strip() == "OK"
 
     def get_prompt(self, guess, target):
@@ -38,9 +44,10 @@ class BinarySearchEvaluator():
         except ValueError:
             return False
 
-    def test_one_time(self, model, verbose=False, teacher_forcing=False):
-        if not self.init_model(model, verbose):
+    def test_one_time(self, model, teacher_forcing=False):
+        if not self.init_model(model, teacher_forcing):
             raise ValueError("Invalid Reply")
+
 
         guess = None
         guess_list = []
@@ -50,23 +57,22 @@ class BinarySearchEvaluator():
 
         l, r = self.min, self.max
 
-        if verbose:
-            print("Picked Random Number: {}".format(target))
+        logger.info("Picked Random Number: {}".format(target))
 
         while guess != target:
-            if verbose:
-                print("Q: {}".format(prompt))
+            self.dialog_logger.info(Q=prompt)
 
             guess = model(prompt)
             guess_list.append(guess)
 
-            if verbose:
-                print("A: {}".format(guess))
-
             if not teacher_forcing and not self.is_valid(guess):
                 raise ValueError(f"Invalid Reply: {guess}")
 
-            if teacher_forcing:
+            if not teacher_forcing:
+                self.dialog_logger.info(A=guess)
+            else:
+                old_guess = guess
+
                 guess = (l + r) // 2
                 teacher_guess_list.append(guess)
                 model.teacher_force(guess)
@@ -76,8 +82,7 @@ class BinarySearchEvaluator():
                 else:
                     l = guess
 
-                if verbose:
-                    print("Teacher Forcing: {}".format(guess))
+                self.dialog_logger.info(A=old_guess, T=guess)
 
             prompt = self.get_prompt(guess, target)
 
