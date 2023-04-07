@@ -6,7 +6,7 @@ class BSModel():
 
     def reset(self):
         self.if_start = False
-        self.last_guess = self.min - 1
+        self.last_guess = None
         self.l = self.min
         self.r = self.max + 1
 
@@ -19,7 +19,7 @@ class BSModel():
         return (self.l + self.r) // 2
 
     def __call__(self, prompt):
-        if "OK" in prompt:
+        if not self.if_start and "OK" in prompt:
             self.reset()
             return "OK"
 

@@ -10,8 +10,8 @@ class BLOOMZ():
         self.qa_prefix = qa_prefix
         self.reset()
 
-    def reset(self):
-        self.context = ""
+    def reset(self, init_context=""):
+        self.context = init_context
         self.last_reply = None
 
     def __call__(self, prompt, max_new_tokens=200):
@@ -28,12 +28,11 @@ class BLOOMZ():
         self.last_reply = output
         return output
 
-    def rebuild_contexts(self, qa_list):
+    def rebuild_context(self, qa_list):
         context = ""
         for q, a in qa_list:
             context += f"Q: {q}\n\nA: {a}\n\n"
 
-        self.context = context
         return context
 
     def teacher_force(self, new_reply):

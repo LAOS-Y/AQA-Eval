@@ -9,7 +9,7 @@ class SimpleModel():
         self.last_guess = self.min - 1
 
     def __call__(self, prompt):
-        if "OK" in prompt:
+        if not self.if_start and "OK" in prompt:
             self.reset()
             return "OK"
 
