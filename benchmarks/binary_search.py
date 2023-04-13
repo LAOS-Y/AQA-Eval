@@ -7,10 +7,12 @@ from utils import DialogLogger
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100, format_tolerant=True):
+    def __init__(self, min=0, max=100, format_tolerant=False, max_retry=0):
         self.min = min
         self.max = max
         self.format_tolerant = format_tolerant
+        # `retry` are only activated when not teacher forcing
+        self.max_retry = max_retry
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = BSModel(min, max)
 
@@ -21,13 +23,13 @@ class BinarySearchEvaluator():
 
     @property
     def init_prompt(self):
-            #    "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
+        #    "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
         return "You are required to guess the random number which I have just picked between {} and {}. " \
-               "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
+               "I will only tell you whether the true number is bigger or lower than your guess." \
                "Adjust your guess according to my response. " \
                "Try as few times as you can. " \
                "Reply 'OK' if you understand. " \
-               "You can only reply with a integer number.".format(self.min, self.max)
+               "You can only reply with a integer number between {} and {}.".format(self.min, self.max, self.min, self.max)
 
     def reset_model(self, model, init_prompt=None, verbose=True):
         if init_prompt is None:
@@ -45,11 +47,16 @@ class BinarySearchEvaluator():
         if guess > self._target:
             return f"The true number is smaller than {guess}"
 
-        return f"The true number is equal to {guess}"
+        return f"Right answer. The true number is equal to {guess}"
 
     def is_valid(self, guess):
         if self.format_tolerant:
-            return len(re.findall(r'\d+', guess))
+            nums = re.findall(r'\d+', guess)
+            if not len(nums):
+                return False
+
+            guess = int(nums[0])
+            return self.min <= guess and guess <= self.max
 
         try:
             guess = int(guess)
@@ -61,6 +68,8 @@ class BinarySearchEvaluator():
         if not self.is_valid(guess):
             return 1
 
+        if self.format_tolerant:
+            guess = re.findall(r'\d+', guess)[0]
         guess = int(guess)
         teacher_guess = int(teacher_guess)
         return abs(guess - teacher_guess) / (self.max - self.min)
@@ -97,13 +106,24 @@ class BinarySearchEvaluator():
         while guess != self._target:
             self.dialog_logger.info(Q=prompt)
 
-            guess = model(prompt)
-            guess_list.append(guess)
+            for i in range(self.max_retry + 1):
+                guess = model(prompt)
+                guess_list.append(guess)
+                self.dialog_logger.info(A=guess)
+
+                if self.is_valid(guess):
+                    break
+
+                prompt = "Invalid reply. " \
+                         "You can only reply with a integer number between " \
+                         f"{self.min} and {self.max}."
+                self.dialog_logger.info(Q=prompt)
 
             if not self.is_valid(guess):
                 raise ValueError(f"Invalid Reply: {guess}")
 
-            self.dialog_logger.info(A=guess)
+            if self.format_tolerant:
+                guess = re.findall(r'\d+', guess)[0]
 
             guess = int(guess)
             prompt = self.get_prompt(guess)
@@ -113,6 +133,7 @@ class BinarySearchEvaluator():
         return len(guess_list)
 
     def _test_tf(self, model):
+        # no retry when teacher forcing
         guess = None
         guess_list = []
         teacher_guess_list = []
@@ -123,11 +144,12 @@ class BinarySearchEvaluator():
             self.dialog_logger.info(Q=prompt)
 
             guess = model(prompt)
+
             model.teacher_force(teacher_guess)
+            self.dialog_logger.info(A=guess, T=teacher_guess)
+
             guess_list.append(guess)
             teacher_guess_list.append(teacher_guess)
-
-            self.dialog_logger.info(A=guess, T=teacher_guess)
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
@@ -168,7 +190,7 @@ class BinarySearchEvaluator():
 
             return i < times - 1
 
-        composed_pre_ctx = self.init_prompt + "\nHere are some examples:\n"
+        composed_pre_ctx = self.init_prompt + "\nHere are some examples (the right answer for each example is different):\n"
         results = []
         for i in range(times):
             results.append(
