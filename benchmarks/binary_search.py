@@ -1,4 +1,5 @@
 import random
+import re
 from loguru import logger
 
 from models import BSModel
@@ -6,10 +7,11 @@ from utils import DialogLogger
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100):
+    def __init__(self, min=0, max=100, format_tolerant=True):
         self.min = min
         self.max = max
-        self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
+        self.format_tolerant = format_tolerant
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = BSModel(min, max)
 
     def reset(self):
@@ -19,33 +21,36 @@ class BinarySearchEvaluator():
 
     @property
     def init_prompt(self):
-        return "You are required to guess the random number which I have just picked between {} and {}.\n" \
-               "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'.\n" \
-               "Adjust your guess according to my response.\n" \
-               "Try as few times as you can.\n" \
-               "Start guessing after receiving 'START' command.\n" \
-               "Stop guessing after receiving 'STOP' command.\n" \
-               "Reply 'OK' if you understand.".format(self.min, self.max)
+            #    "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
+        return "You are required to guess the random number which I have just picked between {} and {}. " \
+               "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
+               "Adjust your guess according to my response. " \
+               "Try as few times as you can. " \
+               "Reply 'OK' if you understand. " \
+               "You can only reply with a integer number.".format(self.min, self.max)
 
-    def init_model(self, model, verbose=True):
-        if verbose:
-            self.dialog_logger.info(Q=self.init_prompt)
-
-        reply = model(self.init_prompt)
+    def reset_model(self, model, init_prompt=None, verbose=True):
+        if init_prompt is None:
+            init_prompt = self.init_prompt
 
         if verbose:
-            self.dialog_logger.info(A=reply)
-        return reply.strip() == "OK"
+            self.dialog_logger.info(System=init_prompt)
+
+        model.reset(init_prompt + "\n\n")
+        return
 
     def get_prompt(self, guess):
         if guess < self._target:
-            return "The true number is bigger than this guess"
+            return f"The true number is bigger than {guess}"
         if guess > self._target:
-            return "The true number is smaller than this guess"
+            return f"The true number is smaller than {guess}"
 
-        return "The true number is equal to this guess"
+        return f"The true number is equal to {guess}"
 
     def is_valid(self, guess):
+        if self.format_tolerant:
+            return len(re.findall(r'\d+', guess))
+
         try:
             guess = int(guess)
             return self.min <= guess and guess <= self.max
@@ -68,8 +73,8 @@ class BinarySearchEvaluator():
 
     def refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
-        self.init_model(self.teacher, verbose=False)
-        self._teacher_qa_list = [(self.init_prompt, "OK")]
+        self.reset_model(self.teacher, verbose=False)
+        self._teacher_qa_list = []
 
         guess = None
         guess_list = []
@@ -82,12 +87,9 @@ class BinarySearchEvaluator():
 
             prompt = self.get_prompt(guess)
 
-        self._teacher_qa_list.append((prompt, ""))
+        self._teacher_qa_list.append((prompt, None))
 
     def _test_no_tf(self, model):
-        if not self.init_model(model):
-            raise ValueError("Invalid Reply")
-
         guess = None
         guess_list = []
         prompt = "START"
@@ -103,6 +105,7 @@ class BinarySearchEvaluator():
 
             self.dialog_logger.info(A=guess)
 
+            guess = int(guess)
             prompt = self.get_prompt(guess)
 
         self.dialog_logger.info(Q=prompt)
@@ -130,8 +133,9 @@ class BinarySearchEvaluator():
 
         return self.calc_err(guess_list, teacher_guess_list)
 
-    def test_one_time(self, model, teacher_forcing=False):
+    def test_one_time(self, model, teacher_forcing=False, init_prompt=None):
         self.reset()
+        self.reset_model(model, init_prompt)
 
         self._target = random.randint(self.min, self.max)
         logger.info("Picked Random Number: {}".format(self._target))
@@ -164,19 +168,25 @@ class BinarySearchEvaluator():
 
             return i < times - 1
 
-        composed_pre_ctx = ""
+        composed_pre_ctx = self.init_prompt + "\nHere are some examples:\n"
         results = []
         for i in range(times):
-            model.reset(init_context=composed_pre_ctx)
-            results.append(self.test_one_time(model, get_tf_flag(i)))
+            results.append(
+                self.test_one_time(
+                    model, get_tf_flag(i),
+                    init_prompt=None if i == 0 else composed_pre_ctx
+                )
+            )
 
             if not get_tf_flag(i):
                 self.refresh_teacher_qa()
 
-            composed_pre_ctx += model.rebuild_context(self._teacher_qa_list)
+            example_ctx = f"Example #{i + 1}: \n" + model.rebuild_context(self._teacher_qa_list)
+            composed_pre_ctx += example_ctx
 
-        # TODO: figure out how to merge results into one metric
-        raise NotImplementedError
+        return results
+        # # TODO: figure out how to merge results into one metric
+        # raise NotImplementedError
 
     def test_multi_times(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:
@@ -190,6 +200,6 @@ class BinarySearchEvaluator():
         assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
 
         if teacher_forcing_mode in ["l0", "l1"]:
-            return self._independent_test(model, times, teacher_forcing_mode == "l1")
+            return self._independent_test(model, times, teacher_forcing_mode=="l1")
 
         return self._context_kept_test(model, times, teacher_forcing_mode)

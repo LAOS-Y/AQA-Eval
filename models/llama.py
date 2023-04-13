@@ -29,7 +29,10 @@ class Llama():
     def rebuild_context(self, qa_list):
         context = ""
         for q, a in qa_list:
-            context += f"Q: {q}\n\nA: {a}\n\n"
+            if q is not None:
+                context += f"Q: {q}\n\n"
+            if a is not None:
+                context += f"A: {a}\n\n"
 
         return context
 
