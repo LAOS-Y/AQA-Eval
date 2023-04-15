@@ -11,31 +11,39 @@ class BLOOMZ():
         self.reset()
 
     def reset(self, init_context=""):
-        self.context = init_context
-        self.last_reply = None
+        self.init_context = init_context
+        self.history = []
+
+    @property
+    def context(self):
+        return self.init_context + self.rebuild_context(self.history)
 
     def __call__(self, prompt, max_new_tokens=200):
         if self.qa_prefix:
-            prompt = self.context + f"Q: {prompt}\n\nA: "
+            full_prompt = self.context + f"Q: {prompt}\n\nA: "
         else:
-            prompt = self.context + f"{prompt}\n\n"
+            full_prompt = self.context + f"{prompt}\n\n"
 
-        input_ = self.tokenizer.encode(prompt, return_tensors="pt").to("cuda")
+        input_ = self.tokenizer.encode(full_prompt, return_tensors="pt").to("cuda")
         output = self.model.generate(input_, max_new_tokens=max_new_tokens)
         output = self.tokenizer.decode(output[0, input_.shape[1]:]).rstrip("</s>")
-        self.context = f"{prompt}{output}\n\n"
 
-        self.last_reply = output
+        self.history.append((prompt, output))
         return output
 
     def rebuild_context(self, qa_list):
         context = ""
         for q, a in qa_list:
-            context += f"Q: {q}\n\nA: {a}\n\n"
+            if q is not None:
+                context += f"Q: {q}\n\n"
+            if a is not None:
+                context += f"A: {a}\n\n"
 
         return context
 
-    def teacher_force(self, new_reply):
-        self.context = self.context[:-(len(self.last_reply) + 2)]
-        self.context += f"{new_reply}\n\n"
-        self.last_reply = new_reply
+    def revoke(self, n=1):
+        assert 0 <= n and n <= len(self.history)
+        self.history = self.history[:-n]
+
+    def force(self, new_reply):
+        self.history[-1] = (self.history[-1][0], new_reply)

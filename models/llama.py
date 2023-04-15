@@ -43,5 +43,5 @@ class Llama():
         assert 0 <= n and n <= len(self.history)
         self.history = self.history[:-n]
 
-    def teacher_force(self, new_reply):
-        self.history[-1][1] = new_reply
+    def force(self, new_reply):
+        self.history[-1] = (self.history[-1][0], new_reply)

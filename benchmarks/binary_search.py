@@ -3,16 +3,18 @@ import re
 from loguru import logger
 
 from models import BSModel
-from utils import DialogLogger
+from utils import DialogLogger, dict_mean
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100, format_tolerant=False, max_retry=0):
+    def __init__(self, min=0, max=100, format_tolerant=False, max_retry=0, max_guess=None):
+        assert min <= max
         self.min = min
         self.max = max
         self.format_tolerant = format_tolerant
-        # `retry` are only activated when not teacher forcing
+        # `max_retry` and `max_guess` are only activated when not teacher forcing
         self.max_retry = max_retry
+        self.max_guess = max_guess if max_guess is not None else self.max - self.min + 1
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = BSModel(min, max)
 
@@ -43,11 +45,11 @@ class BinarySearchEvaluator():
 
     def get_prompt(self, guess):
         if guess < self._target:
-            return f"The true number is bigger than {guess}"
+            return f"The true number is bigger than {guess}."
         if guess > self._target:
-            return f"The true number is smaller than {guess}"
+            return f"The true number is smaller than {guess}."
 
-        return f"Right answer. The true number is equal to {guess}"
+        return f"Right answer. The true number is equal to {guess}."
 
     def is_valid(self, guess):
         if self.format_tolerant:
@@ -64,21 +66,27 @@ class BinarySearchEvaluator():
         except ValueError:
             return False
 
-    def calc_single_err(self, guess, teacher_guess):
+    def calc_err(self, guess, target_guess):
         if not self.is_valid(guess):
             return 1
 
         if self.format_tolerant:
             guess = re.findall(r'\d+', guess)[0]
         guess = int(guess)
-        teacher_guess = int(teacher_guess)
-        return abs(guess - teacher_guess) / (self.max - self.min)
+        target_guess = int(target_guess)
+        return abs(guess - target_guess) / (self.max - self.min)
 
-    def calc_err(self, guess_list, teacher_guess_list):
+    def calc_metric(self, guess_list, target_guess_list):
         err_list = [
-            1 - self.calc_single_err(i, j) for i, j in zip(guess_list, teacher_guess_list)
+            self.calc_err(i, j) for i, j in zip(guess_list, target_guess_list)
         ]
-        return sum(err_list) / len(err_list)
+
+        metrics = {
+            "mean_err": sum(err_list) / len(err_list),
+            "sum_err": sum(err_list),
+            "min_err": min(err_list)
+        }
+        return metrics
 
     def refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
@@ -104,11 +112,16 @@ class BinarySearchEvaluator():
         prompt = "START"
 
         while guess != self._target:
+            if len(guess_list) >= self.max_guess:
+                logger.info(
+                    f"Max guess times reached, stop guessing now."
+                )
+                return guess_list
+
             self.dialog_logger.info(Q=prompt)
 
-            for i in range(self.max_retry + 1):
+            for _ in range(self.max_retry + 1):
                 guess = model(prompt)
-                guess_list.append(guess)
                 self.dialog_logger.info(A=guess)
 
                 if self.is_valid(guess):
@@ -120,17 +133,29 @@ class BinarySearchEvaluator():
                 self.dialog_logger.info(Q=prompt)
 
             if not self.is_valid(guess):
-                raise ValueError(f"Invalid Reply: {guess}")
+                guess_list.append(guess)
+                logger.info(
+                    f"Max retry times reached, stop guessing now."
+                )
+                return guess_list
 
             if self.format_tolerant:
-                guess = re.findall(r'\d+', guess)[0]
+                guess_ = re.findall(r'\d+', guess)[0]
 
+                if guess_ != guess:
+                    logger.info(
+                        f"Format tolerance enabled, force the model reply to {guess_}."
+                    )
+                    model.force(guess_)
+                    guess = guess_
+
+            guess_list.append(guess)
             guess = int(guess)
             prompt = self.get_prompt(guess)
 
         self.dialog_logger.info(Q=prompt)
 
-        return len(guess_list)
+        return guess_list
 
     def _test_tf(self, model):
         # no retry when teacher forcing
@@ -145,7 +170,7 @@ class BinarySearchEvaluator():
 
             guess = model(prompt)
 
-            model.teacher_force(teacher_guess)
+            model.force(teacher_guess)
             self.dialog_logger.info(A=guess, T=teacher_guess)
 
             guess_list.append(guess)
@@ -153,7 +178,7 @@ class BinarySearchEvaluator():
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
-        return self.calc_err(guess_list, teacher_guess_list)
+        return guess_list, teacher_guess_list
 
     def test_one_time(self, model, teacher_forcing=False, init_prompt=None):
         self.reset()
@@ -163,18 +188,25 @@ class BinarySearchEvaluator():
         logger.info("Picked Random Number: {}".format(self._target))
 
         if teacher_forcing:
-            return self._test_tf(model)
+            guess_list, teacher_guess_list = self._test_tf(model)
+            return self.calc_metric(guess_list, teacher_guess_list)
         else:
-            return self._test_no_tf(model)
+            guess_list = self._test_no_tf(model)
+            if not self.is_valid(guess_list[-1]):
+                guess_list = guess_list[:-1]
+
+            target_list = [self._target] * len(guess_list)
+            return self.calc_metric(guess_list, target_list)
 
     def _independent_test(self, model, times, teacher_forcing):
         results = []
-        for _ in range(times):
-            model.reset()
-            results.append(self.test_one_time(model, teacher_forcing))
+        for i in range(times):
+            self.reset_model(model)
+            result = self.test_one_time(model, teacher_forcing)
+            logger.info(f"Evaluation result #{i}: {result}")
+            results.append(result)
 
-        # TODO: figure out how to merge results from completed runs and failed ones into one metric
-        raise NotImplementedError
+        return dict_mean(results)
 
     def _context_kept_test(self, model, times, teacher_forcing_mode):
         # previous context won't be printed again as the initial prompt
@@ -193,12 +225,13 @@ class BinarySearchEvaluator():
         composed_pre_ctx = self.init_prompt + "\nHere are some examples (the right answer for each example is different):\n"
         results = []
         for i in range(times):
-            results.append(
-                self.test_one_time(
-                    model, get_tf_flag(i),
-                    init_prompt=None if i == 0 else composed_pre_ctx
-                )
+            result = self.test_one_time(
+                model, get_tf_flag(i),
+                init_prompt=None if i == 0 else composed_pre_ctx
             )
+
+            logger.info(f"Evaluation result #{i}: {result}")
+            results.append(result)
 
             if not get_tf_flag(i):
                 self.refresh_teacher_qa()
@@ -206,9 +239,7 @@ class BinarySearchEvaluator():
             example_ctx = f"Example #{i + 1}: \n" + model.rebuild_context(self._teacher_qa_list)
             composed_pre_ctx += example_ctx
 
-        return results
-        # # TODO: figure out how to merge results into one metric
-        # raise NotImplementedError
+        return dict_mean(results)
 
     def test_multi_times(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:
@@ -222,6 +253,6 @@ class BinarySearchEvaluator():
         assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
 
         if teacher_forcing_mode in ["l0", "l1"]:
-            return self._independent_test(model, times, teacher_forcing_mode=="l1")
+            return self._independent_test(model, times, teacher_forcing_mode=="l0")
 
         return self._context_kept_test(model, times, teacher_forcing_mode)
