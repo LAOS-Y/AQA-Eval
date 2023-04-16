@@ -24,7 +24,7 @@ class BinarySearchEvaluator():
         self._target = None
 
     @property
-    def init_prompt(self):
+    def default_insturction(self):
         #    "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
         return "You are required to guess the random number which I have just picked between {} and {}. " \
                "I will only tell you whether the true number is bigger or lower than your guess." \
@@ -33,14 +33,14 @@ class BinarySearchEvaluator():
                "Reply 'OK' if you understand. " \
                "You can only reply with a integer number between {} and {}.".format(self.min, self.max, self.min, self.max)
 
-    def reset_model(self, model, init_prompt=None, verbose=True):
-        if init_prompt is None:
-            init_prompt = self.init_prompt
+    def reset_model(self, model, instruction=None, verbose=True):
+        if instruction is None:
+            instruction = self.default_insturction
 
         if verbose:
-            self.dialog_logger.info(System=init_prompt)
+            self.dialog_logger.info(System=instruction)
 
-        model.reset(init_prompt + "\n\n")
+        model.reset(instruction)
         return
 
     def get_prompt(self, guess):
@@ -129,7 +129,7 @@ class BinarySearchEvaluator():
 
                 prompt = "Invalid reply. " \
                          "You can only reply with a integer number between " \
-                         f"{self.min} and {self.max}."
+                         f"{self.min} and {self.max}. Try again."
                 self.dialog_logger.info(Q=prompt)
 
             if not self.is_valid(guess):
@@ -180,9 +180,9 @@ class BinarySearchEvaluator():
 
         return guess_list, teacher_guess_list
 
-    def test_one_time(self, model, teacher_forcing=False, init_prompt=None):
+    def test_one_time(self, model, teacher_forcing=False, instruction=None):
         self.reset()
-        self.reset_model(model, init_prompt)
+        self.reset_model(model, instruction)
 
         self._target = random.randint(self.min, self.max)
         logger.info("Picked Random Number: {}".format(self._target))
@@ -222,12 +222,13 @@ class BinarySearchEvaluator():
 
             return i < times - 1
 
-        composed_pre_ctx = self.init_prompt + "\nHere are some examples (the right answer for each example is different):\n"
+        instruction_w_examples = self.default_insturction \
+                                 + "\nHere are some examples (the right answer for each example is different):\n"
         results = []
         for i in range(times):
             result = self.test_one_time(
                 model, get_tf_flag(i),
-                init_prompt=None if i == 0 else composed_pre_ctx
+                instruction=None if i == 0 else instruction_w_examples
             )
 
             logger.info(f"Evaluation result #{i}: {result}")
@@ -237,9 +238,9 @@ class BinarySearchEvaluator():
                 self.refresh_teacher_qa()
 
             example_ctx = f"Example #{i + 1}: \n" + model.rebuild_context(self._teacher_qa_list)
-            composed_pre_ctx += example_ctx
+            instruction_w_examples += example_ctx
 
-        return dict_mean(results)
+        return dict_mean(results), results
 
     def test_multi_times(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:

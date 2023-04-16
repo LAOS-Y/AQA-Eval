@@ -10,8 +10,8 @@ class BLOOMZ():
         self.qa_prefix = qa_prefix
         self.reset()
 
-    def reset(self, init_context=""):
-        self.init_context = init_context
+    def reset(self, instruction=""):
+        self.init_context = instruction
         self.history = []
 
     @property
@@ -34,10 +34,16 @@ class BLOOMZ():
     def rebuild_context(self, qa_list):
         context = ""
         for q, a in qa_list:
-            if q is not None:
-                context += f"Q: {q}\n\n"
-            if a is not None:
-                context += f"A: {a}\n\n"
+            if self.qa_prefix:
+                if q is not None:
+                    context += f"Q: {q}\n\n"
+                if a is not None:
+                    context += f"A: {a}\n\n"
+            else:
+                if q is not None:
+                    context += f"{q}\n\n"
+                if a is not None:
+                    context += f"{a}\n\n"
 
         return context
 

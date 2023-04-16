@@ -2,25 +2,21 @@ from transformers import LlamaForCausalLM, LlamaTokenizer
 
 
 class Llama():
-    def __init__(self, tokenizer_path, model_path, qa_prefix=True):
+    def __init__(self, tokenizer_path, model_path):
         self.tokenizer = LlamaTokenizer.from_pretrained(tokenizer_path)
         self.model = LlamaForCausalLM.from_pretrained(model_path, device_map="auto")
-        self.qa_prefix = qa_prefix
         self.reset()
 
-    def reset(self, init_context=""):
-        self.init_context = init_context
+    def reset(self, instruction=""):
+        self.init_context = self.format_instruction(instruction)
         self.history = []
 
     @property
     def context(self):
         return self.init_context + self.rebuild_context(self.history)
 
-    def __call__(self, prompt, max_new_tokens=200):
-        if self.qa_prefix:
-            full_prompt = self.context + f"Q: {prompt}\n\nA: "
-        else:
-            full_prompt = self.context + f"{prompt}\n\n"
+    def __call__(self, prompt, max_new_tokens=20):
+        full_prompt = self.context + f"### Input:\n{prompt}\n\n" + f"### Response:\n"
 
         input_ = self.tokenizer.encode(full_prompt, return_tensors="pt").to("cuda")
         output = self.model.generate(input_, max_new_tokens=max_new_tokens)
@@ -29,13 +25,20 @@ class Llama():
         self.history.append((prompt, output))
         return output
 
+    def format_instruction(self, instruction):
+        return "Below is an instruction that describes a task, " \
+               "paired with an input that provides further context. " \
+               "Write a response that appropriately completes the request.\n\n" \
+               "### Instruction:\n" \
+               f"{instruction}\n\n"
+
     def rebuild_context(self, qa_list):
         context = ""
         for q, a in qa_list:
             if q is not None:
-                context += f"Q: {q}\n\n"
+                context += f"### Input:\n{q}\n\n"
             if a is not None:
-                context += f"A: {a}\n\n"
+                context += f"### Response:\n{a}\n\n"
 
         return context
 
