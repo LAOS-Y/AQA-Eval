@@ -1,5 +1,6 @@
 import random
 import re
+
 from loguru import logger
 
 from models import BSModel
@@ -82,7 +83,7 @@ class BinarySearchEvaluator():
         ]
 
         metrics = {
-            "mean_err": sum(err_list) / len(err_list),
+            "avg_err": sum(err_list) / len(err_list),
             "sum_err": sum(err_list),
             "min_err": min(err_list)
         }
@@ -189,24 +190,64 @@ class BinarySearchEvaluator():
 
         if teacher_forcing:
             guess_list, teacher_guess_list = self._test_tf(model)
-            return self.calc_metric(guess_list, teacher_guess_list)
+            metric = self.calc_metric(guess_list, teacher_guess_list)
         else:
             guess_list = self._test_no_tf(model)
             if not self.is_valid(guess_list[-1]):
                 guess_list = guess_list[:-1]
 
             target_list = [self._target] * len(guess_list)
-            return self.calc_metric(guess_list, target_list)
+            metric = self.calc_metric(guess_list, target_list)
 
-    def _independent_test(self, model, times, teacher_forcing):
-        results = []
+        full_result = {}
+        full_result["metric"] = metric
+        full_result["output"] = dict(
+            guess_list=guess_list,
+            teacher_guess_list=teacher_guess_list if teacher_forcing else None
+        )
+        full_result["env"] = dict(
+            min=self.min,
+            max=self.max,
+            target=self._target,
+            teacher_forcing=teacher_forcing,
+            instruction=self.default_insturction if instruction is None else instruction
+        )
+        full_result["history"] = dict(
+            model_history=model.history,
+            teacher_history=self._teacher_qa_list if teacher_forcing else None
+        )
+
+        return metric, full_result
+
+    def _pack_multi_time_result(self, metrics, single_results, teacher_forcing_mode):
+        metric = dict_mean(metrics)
+
+        full_result = {}
+        full_result["metric"] = metric
+        full_result["env"] = dict(
+            min=self.min,
+            max=self.max,
+            times=len(metrics),
+            teacher_forcing_mode=teacher_forcing_mode,
+            default_insturction=self.default_insturction
+        )
+        full_result["single_results"] = single_results
+
+        return metric, full_result
+
+    def _independent_test(self, model, times, teacher_forcing_mode):
+        teacher_forcing = teacher_forcing_mode == "l1"
+
+        metrics = []
+        single_results = []
         for i in range(times):
-            self.reset_model(model)
-            result = self.test_one_time(model, teacher_forcing)
-            logger.info(f"Evaluation result #{i}: {result}")
-            results.append(result)
+            metric, single_result = self.test_one_time(model, teacher_forcing)
 
-        return dict_mean(results)
+            logger.info(f"Evaluation metric #{i}: {metric}")
+            metrics.append(metric)
+            single_results.append(single_result)
+
+        return self._pack_multi_time_result(metrics, single_results, teacher_forcing_mode)
 
     def _context_kept_test(self, model, times, teacher_forcing_mode):
         # previous context won't be printed again as the initial prompt
@@ -224,25 +265,30 @@ class BinarySearchEvaluator():
 
         instruction_w_examples = self.default_insturction \
                                  + "\nHere are some examples (the right answer for each example is different):\n"
-        results = []
+
+        metrics = []
+        single_results = []
         for i in range(times):
-            result = self.test_one_time(
+            metric, single_result = self.test_one_time(
                 model, get_tf_flag(i),
                 instruction=None if i == 0 else instruction_w_examples
             )
 
-            logger.info(f"Evaluation result #{i}: {result}")
-            results.append(result)
+            logger.info(f"Evaluation metric #{i}: {metric}")
 
             if not get_tf_flag(i):
                 self.refresh_teacher_qa()
+                single_result["history"]["teacher_history"] = self._teacher_qa_list
+
+            metrics.append(metric)
+            single_results.append(single_result)
 
             example_ctx = f"Example #{i + 1}: \n" + model.rebuild_context(self._teacher_qa_list)
             instruction_w_examples += example_ctx
 
-        return dict_mean(results), results
+        return self._pack_multi_time_result(metrics, single_results, teacher_forcing_mode)
 
-    def test_multi_times(self, model, times, teacher_forcing_mode="l0"):
+    def test_multi_time(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:
         # "l0": no teacher forcing, context is cleared after each test
         # "l1": naive teacher forcing, context is cleared after each test
@@ -254,6 +300,6 @@ class BinarySearchEvaluator():
         assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
 
         if teacher_forcing_mode in ["l0", "l1"]:
-            return self._independent_test(model, times, teacher_forcing_mode=="l0")
+            return self._independent_test(model, times, teacher_forcing_mode)
 
         return self._context_kept_test(model, times, teacher_forcing_mode)
