@@ -2,6 +2,7 @@ import openai
 import time
 
 openai.api_key = ""
+openai.api_base = 'https://lunarai.deno.dev/v1'
 
 class ChatGPT():
     def __init__(self):
