@@ -9,6 +9,12 @@ class Llama():
 
     def reset(self, instruction=""):
         self.init_context = self.format_instruction(instruction)
+
+        # `self.history` format:
+        # [
+        #     (Q1, A1), # not forced
+        #     (Q2, A2, A2_old, A2_older, ..)  # forced
+        # ],
         self.history = []
 
     @property
@@ -34,7 +40,8 @@ class Llama():
 
     def rebuild_context(self, qa_list):
         context = ""
-        for q, a in qa_list:
+        for qa in qa_list:
+            q, a = qa[:2]
             if q is not None:
                 context += f"### Input:\n{q}\n\n"
             if a is not None:
@@ -47,4 +54,5 @@ class Llama():
         self.history = self.history[:-n]
 
     def force(self, new_reply):
-        self.history[-1] = (self.history[-1][0], new_reply)
+        assert isinstance(new_reply, str)
+        self.history[-1] = (self.history[-1][0], new_reply, *self.history[-1][1:])

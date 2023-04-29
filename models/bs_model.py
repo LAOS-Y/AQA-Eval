@@ -19,10 +19,6 @@ class BSModel():
         return (self.l + self.r) // 2
 
     def __call__(self, prompt):
-        if not self.if_start and "OK" in prompt:
-            self.reset()
-            return "OK"
-
         if prompt == "START":
             self.if_start = True
             self.last_guess = (self.l + self.r) // 2
