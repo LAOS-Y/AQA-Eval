@@ -4,7 +4,7 @@ import re
 from loguru import logger
 
 from models import BSModel
-from utils import DialogLogger, dict_mean
+from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
 class BinarySearchEvaluator():
@@ -31,7 +31,6 @@ class BinarySearchEvaluator():
                "I will only tell you whether the true number is bigger or lower than your guess." \
                "Adjust your guess according to my response. " \
                "Try as few times as you can. " \
-               "Reply 'OK' if you understand. " \
                "You can only reply with a integer number between {} and {}.".format(self.min, self.max, self.min, self.max)
 
     def reset_model(self, model, instruction=None, verbose=True):
@@ -49,35 +48,46 @@ class BinarySearchEvaluator():
             return f"The true number is bigger than {guess}."
         if guess > self._target:
             return f"The true number is smaller than {guess}."
-
+ 
         return f"Right answer. The true number is equal to {guess}."
 
-    def is_valid(self, guess):
+    def extract_answer(self, guess):
         if self.format_tolerant:
             nums = re.findall(r'\d+', guess)
             if not len(nums):
-                return False
+                return FormatInvalid(guess)
 
             guess = int(nums[0])
-            return self.min <= guess and guess <= self.max
+
+            if guess < self.min or guess > self.max:
+                return ValueInvalid(guess)
+            return guess
 
         try:
             guess = int(guess)
-            return self.min <= guess and guess <= self.max
+
+            if guess < self.min or guess > self.max:
+                return ValueInvalid(guess)
+            return guess
         except ValueError:
-            return False
+            return FormatInvalid(guess)
 
     def calc_err(self, guess, target_guess):
-        if not self.is_valid(guess):
+        if isinstance(guess, Invalid):
             return 1
 
-        if self.format_tolerant:
-            guess = re.findall(r'\d+', guess)[0]
         guess = int(guess)
         target_guess = int(target_guess)
         return abs(guess - target_guess) / (self.max - self.min)
 
     def calc_metric(self, guess_list, target_guess_list):
+        if not len(guess_list):
+            return {
+                "avg_err": 1.0,
+                "sum_err": 1.0,
+                "min_err": 1.0
+            }
+
         err_list = [
             self.calc_err(i, j) for i, j in zip(guess_list, target_guess_list)
         ]
@@ -122,36 +132,33 @@ class BinarySearchEvaluator():
             self.dialog_logger.info(Q=prompt)
 
             for _ in range(self.max_retry + 1):
-                guess = model(prompt)
-                self.dialog_logger.info(A=guess)
+                reply = model(prompt)
+                self.dialog_logger.info(A=reply)
 
-                if self.is_valid(guess):
+                guess = self.extract_answer(reply)
+
+                if not isinstance(guess, Invalid):
                     break
+
+                if isinstance(guess, ValueError):
+                    logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
+                    model.force(str(guess))
 
                 prompt = "Invalid reply. " \
                          "You can only reply with a integer number between " \
                          f"{self.min} and {self.max}. Try again."
                 self.dialog_logger.info(Q=prompt)
 
-            if not self.is_valid(guess):
+            if isinstance(guess, Invalid):
                 guess_list.append(guess)
-                logger.info(
-                    f"Max retry times reached, stop guessing now."
-                )
+                logger.info("Max retry times reached, stop guessing now.")
                 return guess_list
 
-            if self.format_tolerant:
-                guess_ = re.findall(r'\d+', guess)[0]
-
-                if guess_ != guess:
-                    logger.info(
-                        f"Format tolerance enabled, force the model reply to {guess_}."
-                    )
-                    model.force(guess_)
-                    guess = guess_
+            if str(guess) != reply:
+                logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
+                model.force(str(guess))
 
             guess_list.append(guess)
-            guess = int(guess)
             prompt = self.get_prompt(guess)
 
         self.dialog_logger.info(Q=prompt)
@@ -171,7 +178,7 @@ class BinarySearchEvaluator():
 
             guess = model(prompt)
 
-            model.force(teacher_guess)
+            model.force(str(teacher_guess))
             self.dialog_logger.info(A=guess, T=teacher_guess)
 
             guess_list.append(guess)
@@ -193,7 +200,9 @@ class BinarySearchEvaluator():
             metric = self.calc_metric(guess_list, teacher_guess_list)
         else:
             guess_list = self._test_no_tf(model)
-            if not self.is_valid(guess_list[-1]):
+            # Since we are interested in how close the model gets to the target number before
+            # it quits, we will remove the final invalid guess when calculating metrics
+            if isinstance(guess_list[-1], Invalid):
                 guess_list = guess_list[:-1]
 
             target_list = [self._target] * len(guess_list)
@@ -221,6 +230,8 @@ class BinarySearchEvaluator():
 
     def _pack_multi_time_result(self, metrics, single_results, teacher_forcing_mode):
         metric = dict_mean(metrics)
+
+        metric = {"mean_" + k: v for k, v in metric.items()}
 
         full_result = {}
         full_result["metric"] = metric
