@@ -22,7 +22,7 @@ class Llama():
         return self.init_context + self.rebuild_context(self.history)
 
     def __call__(self, prompt, max_new_tokens=20):
-        full_prompt = self.context + f"### Input:\n{prompt}\n\n" + f"### Response:\n"
+        full_prompt = self.context + f"### Input:\n{prompt}\n\n" + "### Response:\n"
 
         input_ = self.tokenizer.encode(full_prompt, return_tensors="pt").to("cuda")
         output = self.model.generate(input_, max_new_tokens=max_new_tokens)
