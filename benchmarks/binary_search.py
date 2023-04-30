@@ -16,8 +16,8 @@ class BinarySearchEvaluator():
         # `max_retry` and `max_guess` are only activated when not teacher forcing
         self.max_retry = max_retry
         self.max_guess = max_guess if max_guess is not None else self.max - self.min + 1
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = BSModel(min, max)
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
     def reset(self):
         self.teacher.reset()
@@ -26,14 +26,16 @@ class BinarySearchEvaluator():
 
     @property
     def default_insturction(self):
-        #    "I will only give responses such as 'The true number is bigger than this guess' or 'The true number is smaller than this guess' or 'The true number is equal to this guess'. " \
         return "You are required to guess the random number which I have just picked between {} and {}. " \
-               "I will only tell you whether the true number is bigger or lower than your guess." \
+               "I will only tell you whether the true number is bigger or lower than your guess. " \
                "Adjust your guess according to my response. " \
                "Try as few times as you can. " \
-               "You can only reply with a integer number between {} and {}.".format(self.min, self.max, self.min, self.max)
+               "You can only reply with a integer number between {} and {}." \
+               .format(self.min, self.max, self.min, self.max)
 
     def reset_model(self, model, instruction=None, verbose=True):
+        # clear dialog history and give instruction
+        # will use `self.default_insturction` if `instruction` is None
         if instruction is None:
             instruction = self.default_insturction
 
@@ -48,14 +50,16 @@ class BinarySearchEvaluator():
             return f"The true number is bigger than {guess}."
         if guess > self._target:
             return f"The true number is smaller than {guess}."
- 
+
         return f"Right answer. The true number is equal to {guess}."
 
-    def extract_answer(self, guess):
+    def extract_answer(self, reply):
+        # parse reply from model and return the formated answer
+        # return an `Invalid` if failed to do so
         if self.format_tolerant:
-            nums = re.findall(r'\d+', guess)
+            nums = re.findall(r'\d+', reply)
             if not len(nums):
-                return FormatInvalid(guess)
+                return FormatInvalid(reply)
 
             guess = int(nums[0])
 
@@ -64,7 +68,7 @@ class BinarySearchEvaluator():
             return guess
 
         try:
-            guess = int(guess)
+            guess = int(reply)
 
             if guess < self.min or guess > self.max:
                 return ValueInvalid(guess)
@@ -72,15 +76,17 @@ class BinarySearchEvaluator():
         except ValueError:
             return FormatInvalid(guess)
 
-    def calc_err(self, guess, target_guess):
+    def calc_err(self, guess, target):
+        # calculate the error between a single guess and target
         if isinstance(guess, Invalid):
             return 1
 
         guess = int(guess)
-        target_guess = int(target_guess)
-        return abs(guess - target_guess) / (self.max - self.min)
+        target = int(target)
+        return abs(guess - target) / (self.max - self.min)
 
-    def calc_metric(self, guess_list, target_guess_list):
+    def calc_metric(self, guess_list, target_list):
+        # calculate all the metrics given a list of guesses and targets
         if not len(guess_list):
             return {
                 "avg_err": 1.0,
@@ -89,7 +95,7 @@ class BinarySearchEvaluator():
             }
 
         err_list = [
-            self.calc_err(i, j) for i, j in zip(guess_list, target_guess_list)
+            self.calc_err(i, j) for i, j in zip(guess_list, target_list)
         ]
 
         metrics = {
@@ -118,15 +124,14 @@ class BinarySearchEvaluator():
         self._teacher_qa_list.append((prompt, None))
 
     def _test_no_tf(self, model):
+        # test one time without teacher forcing
         guess = None
         guess_list = []
         prompt = "START"
 
         while guess != self._target:
             if len(guess_list) >= self.max_guess:
-                logger.info(
-                    f"Max guess times reached, stop guessing now."
-                )
+                logger.info("Max guess times reached, stop guessing now.")
                 return guess_list
 
             self.dialog_logger.info(Q=prompt)
@@ -154,7 +159,9 @@ class BinarySearchEvaluator():
                 logger.info("Max retry times reached, stop guessing now.")
                 return guess_list
 
+            # if the final guess is valid due to `self.format_tolerant`, force the reply
             if str(guess) != reply:
+                assert self.format_tolerant, "Reply is changed with format tolerance disabled"
                 logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
                 model.force(str(guess))
 
@@ -166,13 +173,14 @@ class BinarySearchEvaluator():
         return guess_list
 
     def _test_tf(self, model):
-        # no retry when teacher forcing
+        # test one time with teacher forcing
         guess = None
         guess_list = []
         teacher_guess_list = []
 
         self.refresh_teacher_qa()
 
+        # no retry when teacher forcing
         for prompt, teacher_guess in self._teacher_qa_list[:-1]:
             self.dialog_logger.info(Q=prompt)
 
@@ -190,6 +198,7 @@ class BinarySearchEvaluator():
 
     def test_one_time(self, model, teacher_forcing=False, instruction=None):
         self.reset()
+        # will use `self.default_insturction` if `instruction` is None
         self.reset_model(model, instruction)
 
         self._target = random.randint(self.min, self.max)
@@ -201,7 +210,7 @@ class BinarySearchEvaluator():
         else:
             guess_list = self._test_no_tf(model)
             # Since we are interested in how close the model gets to the target number before
-            # it quits, we will remove the final invalid guess when calculating metrics
+            # it quits, the final invalid guess is removed when calculating metrics
             if isinstance(guess_list[-1], Invalid):
                 guess_list = guess_list[:-1]
 
@@ -229,6 +238,7 @@ class BinarySearchEvaluator():
         return metric, full_result
 
     def _pack_multi_time_result(self, metrics, single_results, teacher_forcing_mode):
+        # summarize the metrics from each test run and pack the detailed results
         metric = dict_mean(metrics)
 
         metric = {"mean_" + k: v for k, v in metric.items()}
@@ -261,8 +271,9 @@ class BinarySearchEvaluator():
         return self._pack_multi_time_result(metrics, single_results, teacher_forcing_mode)
 
     def _context_kept_test(self, model, times, teacher_forcing_mode):
-        # previous context won't be printed again as the initial prompt
-        # during the next text run
+        # model's history will be cleared before each run
+        # teacher model's history will be used as example in the intruction prompt
+        # at the beginning of each run
 
         def get_tf_flag(i):
             # i: current run is the `i`-th run. `i` in [0, `times` - 1]
@@ -275,7 +286,7 @@ class BinarySearchEvaluator():
             return i < times - 1
 
         instruction_w_examples = self.default_insturction \
-                                 + "\nHere are some examples (the right answer for each example is different):\n"
+            + "\nHere are some examples (the right answer for each example is different):\n"
 
         metrics = []
         single_results = []
