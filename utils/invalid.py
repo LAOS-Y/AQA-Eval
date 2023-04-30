@@ -1,4 +1,5 @@
 class Invalid():
+    # TODO: make `Invalid` JSON serializable
     def __init__(self, output):
         self.output = output
 
