@@ -91,7 +91,7 @@ class BinarySearchEvaluator():
             return {
                 "avg_err": 1.0,
                 "sum_err": 1.0,
-                "min_err": 1.0
+                "min_err": 1.0,
             }
 
         err_list = [
@@ -101,7 +101,7 @@ class BinarySearchEvaluator():
         metrics = {
             "avg_err": sum(err_list) / len(err_list),
             "sum_err": sum(err_list),
-            "min_err": min(err_list)
+            "min_err": min(err_list),
         }
         return metrics
 
@@ -184,10 +184,12 @@ class BinarySearchEvaluator():
         for prompt, teacher_guess in self._teacher_qa_list[:-1]:
             self.dialog_logger.info(Q=prompt)
 
-            guess = model(prompt)
+            reply = model(prompt)
 
             model.force(str(teacher_guess))
-            self.dialog_logger.info(A=guess, T=teacher_guess)
+            self.dialog_logger.info(A=reply, T=teacher_guess)
+
+            guess = self.extract_answer(reply)
 
             guess_list.append(guess)
             teacher_guess_list.append(teacher_guess)
