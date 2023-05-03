@@ -24,7 +24,16 @@ class DFSEvaluator():
     
     def reset(self):
         self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
-        self.ground_truth_model = DFSModel()
+        self.teacher = DFSModel()
+    
+    @property
+    def default_insturction(self):
+        return "You are on a node of an undirected non-cyclic graph. "\
+                "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. \n" \
+                "You are asked to visit all nodes in the graph. \n" \
+                "Every time you enter a node, you will be given the adjacent nodes connected to this node. \n" \
+                "You can move to a node by responding the node ID adjacent to the node. \n" \
+                "The game will finish once you have visited all the nodes in the graph. \n"
 
     def _get_adj_nodes(self, graph, curr_node):
         return [n for _, n in graph.edges(curr_node)]
@@ -34,8 +43,7 @@ class DFSEvaluator():
                                    curr_node,
                                    node_history,
                                    mcq,
-                                   provide_state,
-                                   start=False):
+                                   provide_state):
         '''
         Generate prompt used in exploration step
 
@@ -44,12 +52,7 @@ class DFSEvaluator():
 
         adj_nodes = self._get_adj_nodes(graph, curr_node)
 
-        if start:
-            prompt = "START. "
-        else:
-            prompt = ""
-
-        prompt += "You are on node {}, " \
+        prompt = "You are on node {}, " \
                  "number of adjacent node is {}, " \
                  "adjacent nodes are {}".format(
                     str(curr_node),
@@ -72,7 +75,7 @@ class DFSEvaluator():
                             graph, curr_node,
                             model_response, # model/teacher string response
                             node_history, # variables for tracking node states
-                            teacher_forcing, mcq, provide_state # model evaluation config
+                            mcq, provide_state # model evaluation config
                             ):
         '''
         Process model response, decide prompt used in next step or finish exploring
@@ -107,7 +110,7 @@ class DFSEvaluator():
             # should visit child node
             dfs_correctness = (next_node in unused_nodes)
 
-        prompt = self._generate_exploring_prompt(graph, next_node, node_history, mcq, provide_state, start=False)
+        prompt = self._generate_exploring_prompt(graph, next_node, node_history, mcq, provide_state)
         
         node_history.append(next_node)
 
@@ -119,13 +122,8 @@ class DFSEvaluator():
     def init_model(self, model, teacher_forcing=False, explain_algo=False):
         
         model.reset()
-        prompt = "You are on a node of an undirected non-cyclic graph. "\
-                  "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. \n" \
-                  "You are asked to visit all nodes in the graph.\n" \
-                  "Every time you enter a node, you will be given the adjacent nodes connected to this node. \n" \
-                  "You can explore the graph by responding the node ID adjacent to the node. \n" \
-                  "The game will finish once you have visited all the nodes in the graph. \n"
-        
+        prompt = self.default_insturction
+
         if explain_algo:
             prompt += "You should use depth first search algorithm, each time you should select a node you have not moved to. If all nodes adjacent to the current node have been visited, you should back track to the previous node. " \
                       "After all interfaces for each node have been visited, you should infer number of node as number of times you visit a new node, and the number of edges as the half of the exploration step number. "
@@ -134,7 +132,7 @@ class DFSEvaluator():
                   "Reply 'OK' if you understand."
         
         self.dialog_logger.info(Q=prompt)
-        self.ground_truth_model(prompt=prompt)
+        self.teacher(prompt=prompt)
 
         reply = model(prompt).lower()
         if teacher_forcing:
@@ -154,11 +152,11 @@ class DFSEvaluator():
         # info required for recording and iterative eval
         cnt = 0
         # node_num = random.randint(3, 4)
-        node_num = 6
+        node_num = 10
         graph = networkx.random_tree(node_num).to_undirected()
         curr_node = random.randint(0, node_num-1)
         
-        prompt = self._generate_exploring_prompt(graph, curr_node, [], mcq, provide_state, start=True)
+        prompt = "START. " + self._generate_exploring_prompt(graph, curr_node, [], mcq, provide_state)
         
         retry_cnt = 0
 
@@ -179,14 +177,14 @@ class DFSEvaluator():
                 self.dialog_logger.info(A=model_response)
                 teacher_response = ""
             else:
-                teacher_response = self.ground_truth_model(prompt=prompt)
+                teacher_response = self.teacher(prompt=prompt)
                 self.dialog_logger.info(A=model_response, T=teacher_response)
                 model.force(teacher_response)
 
             # start processing response in this iteration
             try:
-                # case for ground truth model, added so that ground truth model can achieve max score
-                if model_response == "null":
+                # if all node visited, finish 
+                if cov == 1.0:
                     break
                 
                 # if ground truth has finished, end evaluation
@@ -195,7 +193,7 @@ class DFSEvaluator():
 
                 prompt, curr_node, dfs_correctness, cov = self._explore_graph_step(graph, curr_node,
                                                             model_response, node_history, 
-                                                            teacher_forcing, mcq, provide_state)
+                                                            mcq, provide_state)
                 
                 if dfs_correctness:
                     correct_cnt += 1
@@ -204,7 +202,7 @@ class DFSEvaluator():
                 cnt += 1
                 retry_cnt = 0
             except Exception as e:
-                print("Model output exception: " + e)
+                print(e)
                 if retry_cnt == 0:
                     prompt = "Invalid response. Try again. Please do not include any reasoning in your response. " + prompt
                 retry_cnt += 1

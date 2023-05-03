@@ -17,7 +17,7 @@ evaluator = DFSEvaluator()
 # model = models.DfsVerifier()
 model = models.DFSModel()
 # evaluator.test_multi_time(model, NUM, teacher_forcing_mode=TF, mcq=MCQ, explain_algo=EXPLAIN_ALGP, provide_state=STATED)
-evaluator.test_one_time(model, teacher_forcing=False, mcq=MCQ, explain_algo=EXPLAIN_ALGP, provide_state=STATED)
+evaluator.test_one_time(model, teacher_forcing=True, mcq=MCQ, explain_algo=EXPLAIN_ALGP, provide_state=STATED)
 
 trial_name = f"./dfs_{MODEL.replace('.', '-')}_{TF}"
 if MCQ:

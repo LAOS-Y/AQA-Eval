@@ -56,3 +56,6 @@ class DFSModel():
             self.last_response = str(self.node_stack[-1])
             self.node_stack.pop() # pop parent node
             return self.last_response
+        
+    def force(self, new_reply):
+        return
