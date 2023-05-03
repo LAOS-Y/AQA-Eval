@@ -125,8 +125,7 @@ class DFSEvaluator():
         prompt = self.default_insturction
 
         if explain_algo:
-            prompt += "You should use depth first search algorithm, each time you should select a node you have not moved to. If all nodes adjacent to the current node have been visited, you should back track to the previous node. " \
-                      "After all interfaces for each node have been visited, you should infer number of node as number of times you visit a new node, and the number of edges as the half of the exploration step number. "
+            prompt += "You should use depth first search algorithm, each time you should select a node you have not moved to. If all nodes adjacent to the current node have been visited, you should back track to the node through which you entered this node. "
 
         prompt += "Try move as few times as you can.\n" \
                   "Reply 'OK' if you understand."
