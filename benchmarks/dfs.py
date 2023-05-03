@@ -212,5 +212,5 @@ class DFSEvaluator():
         print(f"coverage: sum: {cov_sum}, min: {1 - cov}")
         print(f"accuracy: {correct_cnt / cnt}")
 
-        return cnt, cov_sum, cov, correct_cnt / cnt
+        return cnt, cov_sum, 1 - cov, correct_cnt / cnt
 
