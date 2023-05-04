@@ -142,13 +142,17 @@ class DFSEvaluator():
         prompt = "START. " + self._generate_exploring_prompt(start_node, [], mcq, provide_state)
         node_history = [start_node]
 
+        cov_sum = 0
         while len(set(self._graph.nodes).difference(set(node_history))) != 0: # while exist node not visited
-            response = self.teacher(prompt)            
+            response = self.teacher(prompt)
             self._teacher_qa_list.append((prompt, response))
 
             curr_node = extract_int(response)[0]
             prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
             node_history.append(curr_node)
+            cov_sum += len(set(node_history)) / len(self._graph.nodes)
+        
+        return cov_sum
     
     def _test_no_tf(self, model, start_node, mcq, provide_state):
         '''
@@ -217,7 +221,7 @@ class DFSEvaluator():
         cov = 1 / len(self._graph.nodes)
         covs = [cov]
 
-        self.refresh_teacher_qa(start_node, mcq, provide_state)
+        optim_cov_sum = self.refresh_teacher_qa(start_node, mcq, provide_state)
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -240,7 +244,7 @@ class DFSEvaluator():
                 correct_cnt += 1
             covs.append(1 - cov)
 
-        return correct_cnt / len(self._teacher_qa_list), covs, node_history
+        return correct_cnt / len(self._teacher_qa_list), covs, optim_cov_sum, node_history
 
     def test_one_time(self, model, teacher_forcing, mcq, explain_algo, provide_state, instruction=None):
         self.reset()
@@ -252,7 +256,7 @@ class DFSEvaluator():
         logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
         
         if teacher_forcing:
-            accuracy, covs, model_node_history = self._test_tf(model, start_node, mcq, provide_state)
+            accuracy, covs, optim_cov_sum, model_node_history = self._test_tf(model, start_node, mcq, provide_state)
         else:
             accuracy, covs, model_node_history = self._test_no_tf(model, start_node, mcq, provide_state)
 
@@ -265,6 +269,7 @@ class DFSEvaluator():
             inv_coverage_list=covs
         )
         full_result["env"] = dict(
+            optim_cov_sum=optim_cov_sum if teacher_forcing else None,
             nodes=list(self._graph.nodes),
             edges=list(self._graph.edges),
             start_node=start_node,
