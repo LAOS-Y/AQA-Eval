@@ -8,7 +8,7 @@ from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100, format_tolerant=False, max_retry=0, max_guess=None):
+    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_guess=None):
         assert min <= max
         self.min = min
         self.max = max
