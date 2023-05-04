@@ -26,11 +26,7 @@ class DFSModel():
         prompt = prompt.lower()
         if "try again" in prompt:
             return self.last_response
-        if "ok" in prompt:
-            self.reset()
-            self.last_response = "OK"
-            return "OK"
-                
+
         if "start" in prompt:
             info = extract_int(prompt)
             self.node_history.append(info[CURR_NODE_IDX])

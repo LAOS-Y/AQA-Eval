@@ -19,13 +19,16 @@ def get_coverage(path, nodes):
     return len(nodes.intersection(set(path))) / len(nodes)
 
 class DFSEvaluator():
-    def __init__(self) -> None:
+    def __init__(self, node_num=10) -> None:
         self.reset()
+        self.node_num = node_num
     
     def reset(self):
         self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
         self.teacher = DFSModel()
-    
+        self._teacher_qa_list = None
+        self._graph = None
+
     @property
     def default_insturction(self):
         return "You are on a node of an undirected non-cyclic graph. "\
@@ -33,13 +36,29 @@ class DFSEvaluator():
                 "You are asked to visit all nodes in the graph. \n" \
                 "Every time you enter a node, you will be given the adjacent nodes connected to this node. \n" \
                 "You can move to a node by responding the node ID adjacent to the node. \n" \
+                "Try move as few times as you can.\n" \
                 "The game will finish once you have visited all the nodes in the graph. \n"
 
-    def _get_adj_nodes(self, graph, curr_node):
-        return [n for _, n in graph.edges(curr_node)]
+    def reset_model(self, model, instruction=None, explain_algo=False, verbose=True):
+        # clear dialog history and give instruction
+        # will use `self.default_insturction` if `instruction` is None
+        if instruction is None:
+            instruction = self.default_insturction
+        
+        if explain_algo:
+            instruction += "You should use depth first search algorithm, each time you should select a node you have not moved to. If all nodes adjacent to the current node have been visited, you should back track to the node through which you entered this node for the first time. "
+
+        if verbose:
+            self.dialog_logger.info(System=instruction)
+
+        model.reset(instruction)
+        return
+
+
+    def _get_adj_nodes(self, curr_node):
+        return [n for _, n in self._graph.edges(curr_node)]
     
     def _generate_exploring_prompt(self, 
-                                   graph, 
                                    curr_node,
                                    node_history,
                                    mcq,
@@ -50,7 +69,7 @@ class DFSEvaluator():
         Return: prompt (string)
         '''
 
-        adj_nodes = self._get_adj_nodes(graph, curr_node)
+        adj_nodes = self._get_adj_nodes(curr_node)
 
         prompt = "You are on node {}, " \
                  "number of adjacent node is {}, " \
@@ -70,20 +89,18 @@ class DFSEvaluator():
 
         return prompt
 
-
-    def _explore_graph_step(self, 
-                            graph, curr_node,
-                            model_response, # model/teacher string response
-                            node_history, # variables for tracking node states
-                            mcq, provide_state # model evaluation config
+    def single_step_metric(self, curr_node,
+                            model_response, # model string response
+                            node_history # variables for tracking node states
                             ):
         '''
-        Process model response, decide prompt used in next step or finish exploring
+        Process model response, raise error if fail to process invalid response
+        AND Calculate metric values 
+        - node_history: will be appended with the selected next node
         
         Return 
-        - string: prompt used in the next exploring step
-        - int: next node
-        - boolean: if selected interface is same as teacher model
+        - int: next node selected in model response
+        - boolean: if selected interface follows dfs
         - float: coverage of nodes after exploration
         '''
 
@@ -92,11 +109,12 @@ class DFSEvaluator():
             raise RuntimeError("Returning int number not equal to 1")
         
         next_node = ints[0]
-        adj_nodes = self._get_adj_nodes(graph, curr_node)
+        adj_nodes = self._get_adj_nodes(curr_node)
         if next_node not in adj_nodes:
             raise RuntimeError("Selected next node not in adjacent node")
         
         # check if model selected node following dfs path. i.e. select unvisited child node or parent node
+        adj_nodes = self._get_adj_nodes(curr_node)
         unused_nodes = set(adj_nodes).difference(set(node_history))
         if len(unused_nodes) == 0:
             # if all child have been fisited, check if model is visiting its parent node in the history stack
@@ -110,107 +128,156 @@ class DFSEvaluator():
             # should visit child node
             dfs_correctness = (next_node in unused_nodes)
 
-        prompt = self._generate_exploring_prompt(graph, next_node, node_history, mcq, provide_state)
-        
         node_history.append(next_node)
 
-        cov = len(set(node_history)) / len(graph.nodes)
+        cov = len(set(node_history)) / len(self._graph.nodes)
 
-        return prompt, next_node, dfs_correctness, cov
+        return next_node, dfs_correctness, cov
 
+    def refresh_teacher_qa(self, start_node, mcq, provide_state):
+        self.reset_model(self.teacher, verbose=False)
+        self._teacher_qa_list = []
 
-    def init_model(self, model, teacher_forcing=False, explain_algo=False):
-        
-        model.reset()
-        prompt = self.default_insturction
+        response = ""
+        prompt = "START. " + self._generate_exploring_prompt(start_node, [], mcq, provide_state)
+        node_history = [start_node]
 
-        if explain_algo:
-            prompt += "You should use depth first search algorithm, each time you should select a node you have not moved to. If all nodes adjacent to the current node have been visited, you should back track to the node through which you entered this node. "
+        while len(set(self._graph.nodes).difference(set(node_history))) != 0: # while exist node not visited
+            response = self.teacher(prompt)
+            self._teacher_qa_list.append((prompt, response))
 
-        prompt += "Try move as few times as you can.\n" \
-                  "Reply 'OK' if you understand."
-        
-        self.dialog_logger.info(Q=prompt)
-        self.teacher(prompt=prompt)
+            prompt = self._generate_exploring_prompt(start_node, node_history, mcq, provide_state)
 
-        reply = model(prompt).lower()
-        if teacher_forcing:
-            self.dialog_logger.info(A=reply, T="OK")
-            model.force("OK")
-            return True
-        
-        self.dialog_logger.info(A=reply)
-        return "ok" in reply
+            node_history.append(extract_int(response)[0])
+    
+    def _test_no_tf(self, model, start_node, mcq, provide_state):
+        '''
+        Return:
+        - accuracy: percentage of node selected following dfs
+        - covs: list of (1 - coverages)
+        - trace of node explored by model
+        '''
 
-    def test_one_time(self, model, teacher_forcing, mcq, explain_algo, provide_state):
-
-        self.reset()
-        if not self.init_model(model, teacher_forcing, explain_algo):
-            raise RuntimeError("failed to init model")
-        
         # info required for recording and iterative eval
         cnt = 0
-        # node_num = random.randint(3, 4)
-        node_num = 10
-        graph = networkx.random_tree(node_num).to_undirected()
-        curr_node = random.randint(0, node_num-1)
+        curr_node = start_node
         
-        prompt = "START. " + self._generate_exploring_prompt(graph, curr_node, [], mcq, provide_state)
+        prompt = "START. " + self._generate_exploring_prompt(curr_node, [], mcq, provide_state)
         
         retry_cnt = 0
 
         node_history = [curr_node]
         
-        logger.info("Generated random graph: nodes: {}, edges: {}".format(graph.nodes, graph.edges))
+        logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
 
         correct_cnt = 0
-        cov_sum = 0
-        cov = 0
-
+        covs = [1 / len(self._graph.nodes)]
+        
         while cnt < 20 and retry_cnt <= 3:
             self.dialog_logger.info(Q=prompt)
             
-            model_response = model(prompt).lower()
-
-            if not teacher_forcing:
-                self.dialog_logger.info(A=model_response)
-                teacher_response = ""
-            else:
-                teacher_response = self.teacher(prompt=prompt)
-                self.dialog_logger.info(A=model_response, T=teacher_response)
-                model.force(teacher_response)
+            reply = model(prompt).lower()
+            self.dialog_logger.info(A=reply)
 
             # start processing response in this iteration
             try:
-                # if all node visited, finish 
-                if cov == 1.0:
-                    break
-                
-                # if ground truth has finished, end evaluation
-                if teacher_forcing and teacher_response == "null":
-                    break
+                curr_node, dfs_correct, cov = self.single_step_metric(curr_node, reply, node_history)
 
-                prompt, curr_node, dfs_correctness, cov = self._explore_graph_step(graph, curr_node,
-                                                            model_response, node_history, 
-                                                            mcq, provide_state)
+                prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
                 
-                if dfs_correctness:
+                if dfs_correct:
                     correct_cnt += 1
-                cov_sum += 1 - cov
+                covs.append(1 - cov)
 
                 cnt += 1
                 retry_cnt = 0
+
+                # if all node visited, finish 
+                if cov == 1.0:
+                    break
             except Exception as e:
                 print(e)
                 if retry_cnt == 0:
                     prompt = "Invalid response. Try again. Please do not include any reasoning in your response. " + prompt
                 retry_cnt += 1
+        
+        if cnt == 0:
+            return 0, covs, node_history
+        return correct_cnt / cnt, covs, node_history
 
-        print(f"finished, cnt: {cnt}")
-        print(f"nodes: {graph.nodes}, edges: {graph.edges}")
-        print(f"history: {node_history}")
-        print(f"coverage: sum: {cov_sum}, min: {1 - cov}")
-        print(f"accuracy: {correct_cnt / cnt}")
+    def _test_tf(self, model, start_node, mcq, provide_state):
+        '''
+        Return:
+        - accuracy: percentage of node selected following dfs
+        - covs: list of (1 - coverages)
+        - trace of node explored by model
+        '''
+        # info required for recording and iterative eval  
+        curr_node = start_node      
+        prompt = "START. " + self._generate_exploring_prompt(curr_node, [], mcq, provide_state)
+        
+        node_history = [curr_node]
+        
+        logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
 
-        return cnt, cov_sum, 1 - cov, correct_cnt / cnt
+        correct_cnt = 0
+        covs = []
+        cov = 0
 
+        self.refresh_teacher_qa()
+
+        # no retry when teacher forcing
+        for prompt, teacher_reply in self._teacher_qa_list:
+            self.dialog_logger.info(Q=prompt)
+
+            reply = model(prompt)
+            model.force(teacher_reply)
+            self.dialog_logger.info(A=reply, T=teacher_reply)
+
+            try:
+                _, dfs_correct, cov = self.single_step_metric(curr_node, reply, node_history)
+            except:
+                # coverage value does not change
+                dfs_correct = False
+
+            if dfs_correct:
+                correct_cnt += 1
+            covs.append(1 - cov)
+
+        return correct_cnt / len(self._teacher_qa_list), covs, node_history
+
+    def test_one_time(self, model, teacher_forcing, mcq, explain_algo, provide_state, instruction):
+        self.reset()
+        self.reset_model(model, instruction, explain_algo)
+
+        self._graph = networkx.random_tree(self.node_num).to_undirected()
+        start_node = random.randint(0, self.node_num-1)
+        
+        if teacher_forcing:
+            accuracy, covs, model_node_history = self._test_tf(model, start_node, mcq, provide_state)
+        else:
+            accuracy, covs, model_node_history = self._test_no_tf(model, start_node, mcq, provide_state)
+
+        full_result = {}
+        full_result["accuracy"] = accuracy
+        full_result["cov_min"] = covs[-1]
+        full_result["cov_sum"] = sum(covs)
+        full_result["output"] = dict(
+            guess_list=model_node_history,
+            coverage_list=covs
+        )
+        full_result["env"] = dict(
+            graph=self._graph,
+            start_node=start_node,
+            teacher_forcing=teacher_forcing,
+            mcq=mcq, 
+            explain_algo=explain_algo, 
+            provide_state=provide_state,
+            instruction=self.default_insturction if instruction is None else instruction
+        )
+        full_result["history"] = dict(
+            model_history=model.history,
+            teacher_history=self._teacher_qa_list if teacher_forcing else None
+        )
+
+        return accuracy, covs[-1], sum(covs), full_result
