@@ -45,7 +45,7 @@ class BinarySearchEvaluator():
         model.reset(instruction)
         return
 
-    def get_prompt(self, guess):
+    def _get_prompt(self, guess):
         if guess < self._target:
             return f"The true number is bigger than {guess}."
         if guess > self._target:
@@ -119,7 +119,7 @@ class BinarySearchEvaluator():
             guess_list.append(guess)
             self._teacher_qa_list.append((prompt, guess))
 
-            prompt = self.get_prompt(guess)
+            prompt = self._get_prompt(guess)
 
         self._teacher_qa_list.append((prompt, None))
 
@@ -166,7 +166,7 @@ class BinarySearchEvaluator():
                 model.force(str(guess))
 
             guess_list.append(guess)
-            prompt = self.get_prompt(guess)
+            prompt = self._get_prompt(guess)
 
         self.dialog_logger.info(Q=prompt)
 

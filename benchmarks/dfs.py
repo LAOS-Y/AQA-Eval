@@ -66,7 +66,7 @@ class DFSEvaluator():
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
-    def _generate_exploring_prompt(self, curr_node, node_history):
+    def _get_prompt(self, curr_node, node_history):
         '''
         Generate prompt used in exploration step
 
@@ -75,12 +75,8 @@ class DFSEvaluator():
 
         adj_nodes = self._get_adj_nodes(curr_node)
 
-        prompt = "You are on node {}, " \
-                 "number of adjacent node is {}, " \
-                 "adjacent nodes are {}".format(
-                    str(curr_node),
-                    len(adj_nodes),
-                    ', '.join([str(i) for i in adj_nodes]))
+        prompt = "You are on node {}, number of adjacent node is {}, adjacent nodes are {}" \
+                 .format(str(curr_node), len(adj_nodes), ', '.join([str(i) for i in adj_nodes]))
 
         if self.provide_state:
             unused_nodes = set(adj_nodes).difference(set(node_history))
@@ -146,7 +142,7 @@ class DFSEvaluator():
 
         curr_node = start_node
         response = ""
-        prompt = "START. " + self._generate_exploring_prompt(start_node, [])
+        prompt = "START. " + self._get_prompt(start_node, [])
         node_history = [start_node]
 
         cov_sum = 0
@@ -156,7 +152,7 @@ class DFSEvaluator():
             self._teacher_qa_list.append((prompt, response))
 
             curr_node = extract_int(response)[0]
-            prompt = self._generate_exploring_prompt(curr_node, node_history)
+            prompt = self._get_prompt(curr_node, node_history)
             node_history.append(curr_node)
             cov_sum += len(set(node_history)) / len(self._graph.nodes)
 
@@ -174,7 +170,7 @@ class DFSEvaluator():
         cnt = 0
         curr_node = start_node
 
-        prompt = "START. " + self._generate_exploring_prompt(curr_node, [])
+        prompt = "START. " + self._get_prompt(curr_node, [])
 
         retry_cnt = 0
 
@@ -195,7 +191,7 @@ class DFSEvaluator():
                     curr_node, reply, node_history
                 )
 
-                prompt = self._generate_exploring_prompt(curr_node, node_history)
+                prompt = self._get_prompt(curr_node, node_history)
 
                 if dfs_correct:
                     correct_cnt += 1
@@ -257,9 +253,7 @@ class DFSEvaluator():
 
         return correct_cnt / len(self._teacher_qa_list), covs, optim_cov_sum, node_history
 
-    def test_one_time(
-        self, model, teacher_forcing, instruction=None
-    ):
+    def test_one_time(self, model, teacher_forcing, instruction=None):
         self.reset()
         self.reset_model(model, instruction)
 
