@@ -40,17 +40,16 @@ class DFSEvaluator():
 
     @property
     def default_insturction(self):
-        instruction = "You are on a node of an undirected non-cyclic graph. " \
+        instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
                       "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
                       "All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. " \
-                      "You are asked to visit all nodes in the graph. " \
-                      "Every time you enter a node, you will be given the adjacent nodes connected to this node. " \
-                      "You can move to a node by responding the node ID adjacent to the node. " \
-                      "Try move as few times as you can. " \
-                      "The game will finish once you have visited all the nodes in the graph."
+                      "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
+                      "You can only reply with a integer number indicating which node to be visited next. " \
+                      "Try moving as few times as you can. " \
+                      "You are currently on the node 0." \
 
         if self.explain_algo:
-            instruction += "You should use depth first search algorithm, each time you should " \
+            instruction += "\nYou should use depth first search algorithm, each time you should " \
                            "select a node you have not moved to. If all nodes adjacent to the " \
                            "current node have been visited, you should back track to the node " \
                            "through which you entered this node for the first time. "
@@ -80,19 +79,18 @@ class DFSEvaluator():
 
         adj_nodes = self._get_adj_nodes(curr_node)
 
-        prompt = "You are on node {}, number of adjacent node is {}, adjacent nodes are {}" \
-                 .format(str(curr_node), len(adj_nodes), ', '.join([str(i) for i in adj_nodes]))
+        prompt = "Adjacent nodes: {}.".format(", ".join([str(i) for i in adj_nodes]))
 
         if self.provide_state:
             unused_nodes = set(adj_nodes).difference(set(node_history))
             if len(unused_nodes) == 0:
                 prompt += " You have visited all nodes adjacent to this node."
             else:
-                prompt += " You have not visited node {} adjacent to this node." \
-                          .format(', '.join([str(i) for i in unused_nodes]))
+                prompt += " You have not visited node {}." \
+                          .format(", ".join([str(i) for i in unused_nodes]))
         if self.mcq:
-            prompt += " Select the next node ID from the following selections: {}" \
-                      .format(', '.join([str(i) for i in adj_nodes]))
+            prompt += " Choose the next node to visit: {}." \
+                      .format(", ".join([str(i) for i in adj_nodes]))
 
         return prompt
 
@@ -135,9 +133,7 @@ class DFSEvaluator():
             # should visit child node
             dfs_correctness = (next_node in unused_nodes)
 
-        node_history.append(next_node)
-
-        cov = len(set(node_history)) / len(self._graph.nodes)
+        cov = len(set(node_history + [next_node])) / len(self._graph.nodes)
 
         return next_node, dfs_correctness, cov
 
@@ -147,7 +143,7 @@ class DFSEvaluator():
 
         curr_node = self._start_node
         response = ""
-        prompt = "START. " + self._get_prompt(self._start_node, [])
+        prompt = self._get_prompt(self._start_node, [])
         node_history = [self._start_node]
 
         cov_sum = 0
@@ -175,7 +171,7 @@ class DFSEvaluator():
         cnt = 0
         curr_node = self._start_node
 
-        prompt = "START. " + self._get_prompt(curr_node, [])
+        prompt = self._get_prompt(curr_node, [])
 
         retry_cnt = 0
 
@@ -195,6 +191,8 @@ class DFSEvaluator():
                 curr_node, dfs_correct, cov = self.single_step_metric(
                     curr_node, reply, node_history
                 )
+
+                node_history.append(curr_node)
 
                 prompt = self._get_prompt(curr_node, node_history)
 
@@ -234,6 +232,7 @@ class DFSEvaluator():
         covs = [cov]
 
         optim_cov_sum = self.refresh_teacher_qa()
+        curr_node = self._start_node
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -242,8 +241,6 @@ class DFSEvaluator():
             reply = model(prompt)
             model.force(teacher_reply)
             self.dialog_logger.info(A=reply, T=teacher_reply)
-
-            curr_node = extract_int(prompt)[0]
 
             try:
                 _, dfs_correct, cov = self.single_step_metric(curr_node, reply, node_history)
@@ -256,6 +253,9 @@ class DFSEvaluator():
                 correct_cnt += 1
             covs.append(1 - cov)
 
+            curr_node = int(teacher_reply)
+            node_history.append(curr_node)
+
         return correct_cnt / len(self._teacher_qa_list), covs, optim_cov_sum, node_history
 
     def test_one_time(self, model, teacher_forcing, instruction=None):
@@ -263,7 +263,8 @@ class DFSEvaluator():
         self.reset_model(model, instruction)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
-        self._start_node = random.randint(0, self.node_num-1)
+        # self._start_node = random.randint(0, self.node_num-1)
+        self._start_node = 0
 
         logger.info("Generated random graph: nodes: {}, edges: {}"
                     .format(self._graph.nodes, self._graph.edges))
