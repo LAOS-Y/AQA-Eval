@@ -1,9 +1,11 @@
-import random
 import networkx
+import random
 import re
+
 from loguru import logger
-from utils import DialogLogger
+
 from models.dfs_model import DFSModel
+from utils import DialogLogger, dict_mean
 
 
 def extract_int(s):
@@ -27,29 +29,25 @@ class DFSEvaluator():
         self.mcq = mcq
         self.explain_algo = explain_algo
         self.provide_state = provide_state
-        self.reset()
+        self.teacher = DFSModel()
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
     def reset(self):
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
-        self.teacher = DFSModel()
+        self.teacher.reset("")
         self._teacher_qa_list = None
         self._graph = None
+        self._start_node = None
 
     @property
     def default_insturction(self):
-        return "You are on a node of an undirected non-cyclic graph. "\
-                "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. \n" \
-                "You are asked to visit all nodes in the graph. \n" \
-                "Every time you enter a node, you will be given the adjacent nodes connected to this node. \n" \
-                "You can move to a node by responding the node ID adjacent to the node. \n" \
-                "Try move as few times as you can.\n" \
-                "The game will finish once you have visited all the nodes in the graph. \n"
-
-    def reset_model(self, model, instruction=None, verbose=True):
-        # clear dialog history and give instruction
-        # will use `self.default_insturction` if `instruction` is None
-        if instruction is None:
-            instruction = self.default_insturction
+        instruction = "You are on a node of an undirected non-cyclic graph. " \
+                      "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
+                      "All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. " \
+                      "You are asked to visit all nodes in the graph. " \
+                      "Every time you enter a node, you will be given the adjacent nodes connected to this node. " \
+                      "You can move to a node by responding the node ID adjacent to the node. " \
+                      "Try move as few times as you can. " \
+                      "The game will finish once you have visited all the nodes in the graph."
 
         if self.explain_algo:
             instruction += "You should use depth first search algorithm, each time you should " \
@@ -57,11 +55,18 @@ class DFSEvaluator():
                            "current node have been visited, you should back track to the node " \
                            "through which you entered this node for the first time. "
 
+        return instruction
+
+    def reset_model(self, model, instruction=None, verbose=True):
+        # clear dialog history and give instruction
+        # will use `self.default_insturction` if `instruction` is None
+        if instruction is None:
+            instruction = self.default_insturction
+
         if verbose:
             self.dialog_logger.info(System=instruction)
 
         model.reset(instruction)
-        return
 
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
@@ -136,14 +141,14 @@ class DFSEvaluator():
 
         return next_node, dfs_correctness, cov
 
-    def refresh_teacher_qa(self, start_node):
+    def refresh_teacher_qa(self):
         self.reset_model(self.teacher, verbose=False)
         self._teacher_qa_list = []
 
-        curr_node = start_node
+        curr_node = self._start_node
         response = ""
-        prompt = "START. " + self._get_prompt(start_node, [])
-        node_history = [start_node]
+        prompt = "START. " + self._get_prompt(self._start_node, [])
+        node_history = [self._start_node]
 
         cov_sum = 0
         # while exist node not visited
@@ -158,7 +163,7 @@ class DFSEvaluator():
 
         return cov_sum
 
-    def _test_no_tf(self, model, start_node):
+    def _test_no_tf(self, model):
         '''
         Return:
         - accuracy: percentage of node selected following dfs
@@ -168,7 +173,7 @@ class DFSEvaluator():
 
         # info required for recording and iterative eval
         cnt = 0
-        curr_node = start_node
+        curr_node = self._start_node
 
         prompt = "START. " + self._get_prompt(curr_node, [])
 
@@ -214,7 +219,7 @@ class DFSEvaluator():
             return 0, covs, node_history
         return correct_cnt / cnt, covs, node_history
 
-    def _test_tf(self, model, start_node):
+    def _test_tf(self, model):
         '''
         Return:
         - accuracy: percentage of node selected following dfs
@@ -222,13 +227,13 @@ class DFSEvaluator():
         - trace of node explored by model
         '''
         # info required for recording and iterative eval
-        node_history = [start_node]
+        node_history = [self._start_node]
 
         correct_cnt = 0
         cov = 1 / len(self._graph.nodes)
         covs = [cov]
 
-        optim_cov_sum = self.refresh_teacher_qa(start_node)
+        optim_cov_sum = self.refresh_teacher_qa()
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -258,29 +263,31 @@ class DFSEvaluator():
         self.reset_model(model, instruction)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
-        start_node = random.randint(0, self.node_num-1)
+        self._start_node = random.randint(0, self.node_num-1)
 
         logger.info("Generated random graph: nodes: {}, edges: {}"
                     .format(self._graph.nodes, self._graph.edges))
 
         if teacher_forcing:
-            accuracy, covs, optim_cov_sum, model_node_history = self._test_tf(model, start_node)
+            accuracy, covs, optim_cov_sum, model_node_history = self._test_tf(model)
         else:
-            accuracy, covs, model_node_history = self._test_no_tf(model, start_node)
+            accuracy, covs, model_node_history = self._test_no_tf(model)
+
+        metric = {"accuracy": accuracy, "min_decov": covs[-1], "sum_decov": sum(covs)}
 
         full_result = {}
-        full_result["accuracy"] = accuracy
-        full_result["inv_cov_min"] = covs[-1]
-        full_result["inv_cov_sum"] = sum(covs)
+        full_result["metric"] = metric
         full_result["output"] = dict(
             guess_list=model_node_history,
-            inv_coverage_list=covs
+            # inv_coverage_list=covs
+            # TODO: return `teacher_guess_list`
+            teacher_guess_list=None,
         )
         full_result["env"] = dict(
             optim_cov_sum=optim_cov_sum if teacher_forcing else None,
             nodes=list(self._graph.nodes),
             edges=list(self._graph.edges),
-            start_node=start_node,
+            start_node=self._start_node,
             teacher_forcing=teacher_forcing,
             mcq=self.mcq,
             explain_algo=self.explain_algo,
@@ -292,4 +299,4 @@ class DFSEvaluator():
             teacher_history=self._teacher_qa_list if teacher_forcing else None
         )
 
-        return accuracy, covs[-1], sum(covs), full_result
+        return metric, full_result
