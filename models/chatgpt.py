@@ -6,7 +6,8 @@ openai.api_base = "your_api_base_url"
 
 
 class ChatGPT():
-    def __init__(self):
+    def __init__(self, sleep_sec=0.5):
+        self.sleep_sec = sleep_sec
         self.reset()
 
     def reset(self, instruction="You are a chatbot"):
@@ -14,7 +15,7 @@ class ChatGPT():
         self.history = []
 
     def __call__(self, prompt):
-        time.sleep(20)
+        time.sleep(self.sleep_sec)
         self.messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
