@@ -6,7 +6,8 @@ openai.api_base = "your_api_base_url"
 
 
 class ChatGPT():
-    def __init__(self, sleep_sec=0.5):
+    def __init__(self, model_name, sleep_sec=0.5):
+        self.model_name = model_name
         self.sleep_sec = sleep_sec
         self.reset()
 
@@ -19,7 +20,7 @@ class ChatGPT():
         self.messages.append({"role": "user", "content": prompt})
 
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model=self.model_name,
             messages=self.messages
         )
 
@@ -39,3 +40,14 @@ class ChatGPT():
     def force(self, new_reply):
         self.messages[-1]["content"] = new_reply
         self.history[-1] = (self.history[-1][0], new_reply, *self.history[-1][1:])
+
+    def rebuild_context(self, qa_list):
+        context = ""
+        for qa in qa_list:
+            q, a = qa[:2]
+            if q is not None:
+                context += f"user: {q}\n\n"
+            if a is not None:
+                context += f"assistant: {a}\n\n"
+
+        return context
