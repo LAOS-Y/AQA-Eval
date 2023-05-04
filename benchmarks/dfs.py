@@ -19,7 +19,7 @@ def get_coverage(path, nodes):
     return len(nodes.intersection(set(path))) / len(nodes)
 
 class DFSEvaluator():
-    def __init__(self, node_num=4) -> None:
+    def __init__(self, node_num=10) -> None:
         self.reset()
         self.node_num = node_num
     
@@ -114,7 +114,6 @@ class DFSEvaluator():
             raise RuntimeError("Selected next node not in adjacent node")
         
         # check if model selected node following dfs path. i.e. select unvisited child node or parent node
-        adj_nodes = self._get_adj_nodes(curr_node)
         unused_nodes = set(adj_nodes).difference(set(node_history))
         if len(unused_nodes) == 0:
             # if all child have been fisited, check if model is visiting its parent node in the history stack
@@ -144,12 +143,11 @@ class DFSEvaluator():
         node_history = [start_node]
 
         while len(set(self._graph.nodes).difference(set(node_history))) != 0: # while exist node not visited
-            response = self.teacher(prompt)
+            response = self.teacher(prompt)            
             self._teacher_qa_list.append((prompt, response))
 
-            prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
-
             curr_node = extract_int(response)[0]
+            prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
             node_history.append(curr_node)
     
     def _test_no_tf(self, model, start_node, mcq, provide_state):
@@ -213,16 +211,14 @@ class DFSEvaluator():
         - trace of node explored by model
         '''
         # info required for recording and iterative eval  
-        curr_node = start_node      
-        prompt = "START. " + self._generate_exploring_prompt(curr_node, [], mcq, provide_state)
-        
-        node_history = [curr_node]
+        node_history = [start_node]
         
         correct_cnt = 0
-        covs = []
         cov = 1 / len(self._graph.nodes)
+        covs = [cov]
 
         self.refresh_teacher_qa(start_node, mcq, provide_state)
+        print(self._teacher_qa_list)
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -232,9 +228,12 @@ class DFSEvaluator():
             model.force(teacher_reply)
             self.dialog_logger.info(A=reply, T=teacher_reply)
 
+            curr_node = extract_int(prompt)[0]
+
             try:
                 _, dfs_correct, cov = self.single_step_metric(curr_node, reply, node_history)
-            except:
+            except Exception as e:
+                print(e)
                 # coverage value does not change
                 dfs_correct = False
 
@@ -260,8 +259,8 @@ class DFSEvaluator():
 
         full_result = {}
         full_result["accuracy"] = accuracy
-        full_result["cov_min"] = covs[-1]
-        full_result["cov_sum"] = sum(covs)
+        full_result["inv_cov_min"] = covs[-1]
+        full_result["inv_cov_sum"] = sum(covs)
         full_result["output"] = dict(
             guess_list=model_node_history,
             inv_coverage_list=covs
