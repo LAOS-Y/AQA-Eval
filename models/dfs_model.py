@@ -15,10 +15,10 @@ ADJ_NODE_IDX = 2
 
 class DFSModel():
     def __init__(self):
-        self.reset()
+        self.reset("")
         
-    def reset(self):
-        self.node_history = []
+    def reset(self, instruction):
+        self.history = []
         self.node_stack = [] # list of parent nodes
         self.last_response = ""
 
@@ -29,18 +29,18 @@ class DFSModel():
 
         if "start" in prompt:
             info = extract_int(prompt)
-            self.node_history.append(info[CURR_NODE_IDX])
+            self.history.append(info[CURR_NODE_IDX])
             self.node_stack.append(info[CURR_NODE_IDX])
             
             self.last_response = str(info[ADJ_NODE_IDX])
             return self.last_response
         else:            
             info = extract_int(prompt)
-            self.node_history.append(info[CURR_NODE_IDX])
+            self.history.append(info[CURR_NODE_IDX])
 
             # select a node not fisited before
             for next_node in info[ADJ_NODE_IDX: ADJ_NODE_IDX + info[ADJ_NODE_NUM_IDX]]:
-                if next_node not in self.node_history:
+                if next_node not in self.history:
                     self.node_stack.append(info[CURR_NODE_IDX])
                     self.last_response = str(next_node)
                     return self.last_response

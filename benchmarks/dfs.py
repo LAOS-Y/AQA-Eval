@@ -19,12 +19,12 @@ def get_coverage(path, nodes):
     return len(nodes.intersection(set(path))) / len(nodes)
 
 class DFSEvaluator():
-    def __init__(self, node_num=10) -> None:
+    def __init__(self, node_num=4) -> None:
         self.reset()
         self.node_num = node_num
     
     def reset(self):
-        self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = DFSModel()
         self._teacher_qa_list = None
         self._graph = None
@@ -138,6 +138,7 @@ class DFSEvaluator():
         self.reset_model(self.teacher, verbose=False)
         self._teacher_qa_list = []
 
+        curr_node = start_node
         response = ""
         prompt = "START. " + self._generate_exploring_prompt(start_node, [], mcq, provide_state)
         node_history = [start_node]
@@ -146,9 +147,10 @@ class DFSEvaluator():
             response = self.teacher(prompt)
             self._teacher_qa_list.append((prompt, response))
 
-            prompt = self._generate_exploring_prompt(start_node, node_history, mcq, provide_state)
+            prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
 
-            node_history.append(extract_int(response)[0])
+            curr_node = extract_int(response)[0]
+            node_history.append(curr_node)
     
     def _test_no_tf(self, model, start_node, mcq, provide_state):
         '''
@@ -168,10 +170,8 @@ class DFSEvaluator():
 
         node_history = [curr_node]
         
-        logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
-
         correct_cnt = 0
-        covs = [1 / len(self._graph.nodes)]
+        covs = [1 - 1 / len(self._graph.nodes)]
         
         while cnt < 20 and retry_cnt <= 3:
             self.dialog_logger.info(Q=prompt)
@@ -218,13 +218,11 @@ class DFSEvaluator():
         
         node_history = [curr_node]
         
-        logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
-
         correct_cnt = 0
         covs = []
-        cov = 0
+        cov = 1 / len(self._graph.nodes)
 
-        self.refresh_teacher_qa()
+        self.refresh_teacher_qa(start_node, mcq, provide_state)
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -246,12 +244,14 @@ class DFSEvaluator():
 
         return correct_cnt / len(self._teacher_qa_list), covs, node_history
 
-    def test_one_time(self, model, teacher_forcing, mcq, explain_algo, provide_state, instruction):
+    def test_one_time(self, model, teacher_forcing, mcq, explain_algo, provide_state, instruction=None):
         self.reset()
         self.reset_model(model, instruction, explain_algo)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
         start_node = random.randint(0, self.node_num-1)
+        
+        logger.info("Generated random graph: nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
         
         if teacher_forcing:
             accuracy, covs, model_node_history = self._test_tf(model, start_node, mcq, provide_state)
@@ -264,10 +264,11 @@ class DFSEvaluator():
         full_result["cov_sum"] = sum(covs)
         full_result["output"] = dict(
             guess_list=model_node_history,
-            coverage_list=covs
+            inv_coverage_list=covs
         )
         full_result["env"] = dict(
-            graph=self._graph,
+            nodes=list(self._graph.nodes),
+            edges=list(self._graph.edges),
             start_node=start_node,
             teacher_forcing=teacher_forcing,
             mcq=mcq, 
