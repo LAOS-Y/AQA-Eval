@@ -218,7 +218,6 @@ class DFSEvaluator():
         covs = [cov]
 
         self.refresh_teacher_qa(start_node, mcq, provide_state)
-        print(self._teacher_qa_list)
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
