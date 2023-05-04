@@ -22,9 +22,12 @@ def get_coverage(path, nodes):
 
 
 class DFSEvaluator():
-    def __init__(self, node_num=10) -> None:
-        self.reset()
+    def __init__(self, node_num=10, explain_algo=True, mcq=True, provide_state=True) -> None:
         self.node_num = node_num
+        self.mcq = mcq
+        self.explain_algo = explain_algo
+        self.provide_state = provide_state
+        self.reset()
 
     def reset(self):
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
@@ -42,13 +45,13 @@ class DFSEvaluator():
                 "Try move as few times as you can.\n" \
                 "The game will finish once you have visited all the nodes in the graph. \n"
 
-    def reset_model(self, model, instruction=None, explain_algo=False, verbose=True):
+    def reset_model(self, model, instruction=None, verbose=True):
         # clear dialog history and give instruction
         # will use `self.default_insturction` if `instruction` is None
         if instruction is None:
             instruction = self.default_insturction
 
-        if explain_algo:
+        if self.explain_algo:
             instruction += "You should use depth first search algorithm, each time you should " \
                            "select a node you have not moved to. If all nodes adjacent to the " \
                            "current node have been visited, you should back track to the node " \
@@ -63,8 +66,7 @@ class DFSEvaluator():
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
-    def _generate_exploring_prompt(self, curr_node, node_history, mcq,
-                                   provide_state):
+    def _generate_exploring_prompt(self, curr_node, node_history):
         '''
         Generate prompt used in exploration step
 
@@ -80,14 +82,14 @@ class DFSEvaluator():
                     len(adj_nodes),
                     ', '.join([str(i) for i in adj_nodes]))
 
-        if provide_state:
+        if self.provide_state:
             unused_nodes = set(adj_nodes).difference(set(node_history))
             if len(unused_nodes) == 0:
                 prompt += " You have visited all nodes adjacent to this node."
             else:
                 prompt += " You have not visited node {} adjacent to this node." \
                           .format(', '.join([str(i) for i in unused_nodes]))
-        if mcq:
+        if self.mcq:
             prompt += " Select the next node ID from the following selections: {}" \
                       .format(', '.join([str(i) for i in adj_nodes]))
 
@@ -138,13 +140,13 @@ class DFSEvaluator():
 
         return next_node, dfs_correctness, cov
 
-    def refresh_teacher_qa(self, start_node, mcq, provide_state):
+    def refresh_teacher_qa(self, start_node):
         self.reset_model(self.teacher, verbose=False)
         self._teacher_qa_list = []
 
         curr_node = start_node
         response = ""
-        prompt = "START. " + self._generate_exploring_prompt(start_node, [], mcq, provide_state)
+        prompt = "START. " + self._generate_exploring_prompt(start_node, [])
         node_history = [start_node]
 
         cov_sum = 0
@@ -154,13 +156,13 @@ class DFSEvaluator():
             self._teacher_qa_list.append((prompt, response))
 
             curr_node = extract_int(response)[0]
-            prompt = self._generate_exploring_prompt(curr_node, node_history, mcq, provide_state)
+            prompt = self._generate_exploring_prompt(curr_node, node_history)
             node_history.append(curr_node)
             cov_sum += len(set(node_history)) / len(self._graph.nodes)
 
         return cov_sum
 
-    def _test_no_tf(self, model, start_node, mcq, provide_state):
+    def _test_no_tf(self, model, start_node):
         '''
         Return:
         - accuracy: percentage of node selected following dfs
@@ -172,7 +174,7 @@ class DFSEvaluator():
         cnt = 0
         curr_node = start_node
 
-        prompt = "START. " + self._generate_exploring_prompt(curr_node, [], mcq, provide_state)
+        prompt = "START. " + self._generate_exploring_prompt(curr_node, [])
 
         retry_cnt = 0
 
@@ -193,9 +195,7 @@ class DFSEvaluator():
                     curr_node, reply, node_history
                 )
 
-                prompt = self._generate_exploring_prompt(
-                    curr_node, node_history, mcq, provide_state
-                )
+                prompt = self._generate_exploring_prompt(curr_node, node_history)
 
                 if dfs_correct:
                     correct_cnt += 1
@@ -218,7 +218,7 @@ class DFSEvaluator():
             return 0, covs, node_history
         return correct_cnt / cnt, covs, node_history
 
-    def _test_tf(self, model, start_node, mcq, provide_state):
+    def _test_tf(self, model, start_node):
         '''
         Return:
         - accuracy: percentage of node selected following dfs
@@ -232,7 +232,7 @@ class DFSEvaluator():
         cov = 1 / len(self._graph.nodes)
         covs = [cov]
 
-        optim_cov_sum = self.refresh_teacher_qa(start_node, mcq, provide_state)
+        optim_cov_sum = self.refresh_teacher_qa(start_node)
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list:
@@ -258,10 +258,10 @@ class DFSEvaluator():
         return correct_cnt / len(self._teacher_qa_list), covs, optim_cov_sum, node_history
 
     def test_one_time(
-        self, model, teacher_forcing, mcq, explain_algo, provide_state, instruction=None
+        self, model, teacher_forcing, instruction=None
     ):
         self.reset()
-        self.reset_model(model, instruction, explain_algo)
+        self.reset_model(model, instruction)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
         start_node = random.randint(0, self.node_num-1)
@@ -270,13 +270,9 @@ class DFSEvaluator():
                     .format(self._graph.nodes, self._graph.edges))
 
         if teacher_forcing:
-            accuracy, covs, optim_cov_sum, model_node_history = self._test_tf(
-                model, start_node, mcq, provide_state
-            )
+            accuracy, covs, optim_cov_sum, model_node_history = self._test_tf(model, start_node)
         else:
-            accuracy, covs, model_node_history = self._test_no_tf(
-                model, start_node, mcq, provide_state
-            )
+            accuracy, covs, model_node_history = self._test_no_tf(model, start_node)
 
         full_result = {}
         full_result["accuracy"] = accuracy
@@ -292,9 +288,9 @@ class DFSEvaluator():
             edges=list(self._graph.edges),
             start_node=start_node,
             teacher_forcing=teacher_forcing,
-            mcq=mcq,
-            explain_algo=explain_algo,
-            provide_state=provide_state,
+            mcq=self.mcq,
+            explain_algo=self.explain_algo,
+            provide_state=self.provide_state,
             instruction=self.default_insturction if instruction is None else instruction
         )
         full_result["history"] = dict(
