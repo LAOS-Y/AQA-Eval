@@ -1,4 +1,6 @@
 import random
+import re
+
 import networkx
 from networkx import is_connected
 from itertools import permutations
@@ -127,11 +129,22 @@ def get_min_edit_distance(path, target):
 
     return D[n][m]
 
+def extract_int(s):
+    def isint(word):
+        try:
+            int(word)
+            return True
+        except ValueError:
+            return False
+
+    return [int(word) for word in re.split("\n|,| |\t|\(|\)|\[|\]|\.|{|}", s) if isint(word)]
 
 def extract_next_level_nodes(response):
-    return response[response.index("{"):response.index("}") + 1]
+    return extract_int(response[response.index("{"):response.index("}") + 1])
 
-
+# response = "next i will traverse nodes {1, 3}.         "
+# response = response[response.index("{"):response.index("}") + 1]
+# te = extract_next_level_nodes(response)
 class BfsEvaluator():
     def __init__(self):
         self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
@@ -151,11 +164,13 @@ class BfsEvaluator():
         prompt = "Let's play a game, one question and one answer at a time." \
                  "Now you are on a special unweighted undirected graph A. " \
                  "This undirected graph contains a series of nodes and edges, all of which have the same weight." \
-                 "You can tell me which node you need to move next by saying 'move to node n (ID number)'." \
-                 "For each node you move to, I will tell you the set of neighbouring nodes B of that node " \
-                 "so that you can get a full picture of the graph, and you can choose to move to any known node." \
-                 "Please use the BFS algorithm to solve the shortest path problem, " \
-                 "which means that each move you make needs to follow the BFS algorithm\n" \
+                 "You can tell me the set of nodes B that you will traverse next by saying 'Next i will traverse nodes {...}(set of node ID number)'." \
+                 "After you tell me B, i will tell you a list C." \
+                 "This list C contains the neighbouring nodes of each node in B" \
+                 "Please use the BFS algorithm traverse this graph\n" \
+                 "The game will finish once you have visited all the nodes in the graph. \n" \
+                 "If you visited all the nodes in the graph, response me with 'over.'" \
+                 "Please traverse the entire graph in as few rounds as possible."
 
         if explain_algo:
             prompt += "BFS stands for Breadth First Search. " \
@@ -173,15 +188,9 @@ class BfsEvaluator():
         # if teacher_forcing:
         #     prompt += "If multiple unexplored interfaces exist, break tie by selecting interface with smaller id value"
 
-        prompt += "If you already know the answer, include 'over' in your answer, " \
-                  "ask for as few moves as possible and give the shortest distance from the initial node to all other nodes." \
-                  "At the end of the game, provide an answer in the following format: distance: {...} " \
-                  "That is, answer using a dictionary format " \
-                  "where the key in the dictionary is the ID number of all nodes in the corresponding graph." \
-                  "During the game, your answer should be in the form: move to n,n means ID number" \
-                  "If you get it, answer OK, " \
-                  "then I will tell you the nodes contained in the undirected graph, the initial node IDs and the corresponding set of neighbouring nodes B." \
-                  "Reply 'OK' if you understand."
+        prompt += "If you get it, answer OK, " \
+                  "then I will tell you the start node ID. " \
+                  "You can assume that you have traversed the start node, which means you the nodes B that you will traverse next should not contains the start node." \
 
         self.dialog_logger.info(Q=prompt)
 
@@ -205,6 +214,7 @@ class BfsEvaluator():
         node_num = random.randint(3, 10)
         graph = generate_graph(node_num)
         start_node = random.randint(0, node_num - 1)
+        adjacent_nodes = [edge[1] for edge in graph.edges(start_node)]
 
         logger.info('Generated random graph: nodes: {}, edges: {}'.format(graph.nodes, graph.edges))
 
@@ -228,8 +238,8 @@ class BfsEvaluator():
 
         # START
         prompt = f"START. " \
-                 f'Generated graph: nodes: {graph.nodes}, edges: {graph.edges}. ‘ \
-                 f"The start node is {start_node}. '
+                 f'The start node is {start_node}. ' \
+                 f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
 
         # if mcq:
         #     prompt += f"Choose response from the following selections: 'over', move to {cur_node}"
@@ -256,19 +266,11 @@ class BfsEvaluator():
                     break
 
                 # start processing response in this iteration
-                if "next level nodes are" in model_response:
+                if "traverse nodes" in model_response:
                     # refresh param
                     next_level_nodes = extract_next_level_nodes(model_response)
 
                     # TODO
-                    # if provide_state:
-                    #     no_visited_nodes = set(graph.nodes).difference(node_history)
-                    #     if len(no_visited_nodes) == 0:
-                    #         prompt += " You have visited all nodes of the graph."
-                    #     else:
-                    #         prompt += " You have not visited node{}.".format(
-                    #             ', '.join([str(i) for i in no_visited_nodes]))
-
                     # if mcq:
                     #     prompt += "Choose response from the following selections: 'over. distance is N', {}".format(
                     #         ', '.join(["'move to " + str(i) + "'" for i in graph.nodes]))
@@ -289,6 +291,8 @@ class BfsEvaluator():
                     else:
                         cur_level_nodes = next_level_nodes
 
+                    adjacent_nodes = list(set([edge[1] for next_node in cur_level_nodes for edge in graph.edges(next_node)]))
+
                     # record metric coverage
                     visited_nodes.intersection(set(cur_level_nodes))
                     cur_coverage = len(visited_nodes) / len(graph.nodes)
@@ -297,8 +301,17 @@ class BfsEvaluator():
                     response_cnt += 1
                     retry_cnt = 0
 
-                    prompt = "If you have visited all nodes, response 'over'." \
-                             "Otherwise, please continue traverse the graph in bfs algorithm and response next level nodes"
+                    if provide_state:
+                        no_visited_nodes = set(graph.nodes).difference(visited_nodes)
+                        if len(no_visited_nodes) == 0:
+                            prompt += " You have visited all nodes of the graph."
+                        else:
+                            prompt += " You have not visited node{}.".format(
+                                ', '.join([str(i) for i in no_visited_nodes]))
+
+                    prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
+
+                    prompt += "If you already traverse all nodes of the graph, response 'over'"
             except:
                 if retry_cnt == 0:
                     prompt = "Invalid response. " \
@@ -307,8 +320,8 @@ class BfsEvaluator():
 
                 retry_cnt += 1
 
-        if "over" not in model_response:
-            raise RuntimeError("over not in model_response")
+        # if "over" not in model_response:
+        #     raise RuntimeError("over not in model_response")
 
         cov_result = 0
         for coverage in coverages:
@@ -322,35 +335,35 @@ class BfsEvaluator():
         logger.info(f"med_result: {med_result}")
 
         return cov_result, med_result
-
-    def test_multi_time_l1(self, model, times, teacher_forcing_mode, mcq, explain_algo, provide_state):
-        teacher_forcing = teacher_forcing_mode == "l1"
-
-        coverages = []
-        meds = []
-        fail_cnt = 0
-
-        # run multi times
-        for i in range(times):
-            try:
-                cov_result, med_result = self.test_one_time(model, teacher_forcing, mcq, explain_algo)
-
-                logger.info(f"Evaluation metric #{i}: cov_result: {cov_result}, med_result: {med_result}")
-
-                coverages.append(cov_result)
-                meds.append(med_result)
-
-            except Exception as e:
-                logger.warning("failed this trial, error: {}".format(e))
-                fail_cnt += 1
-
-        return coverages, meds, fail_cnt
-
-    def test_multi_time(self, model, times, teacher_forcing_mode="l0", mcq=False, explain_algo=False,
-                        provide_state=False):
-        assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
-
-        if teacher_forcing_mode in ["l0", "l1"]:
-            return self.test_multi_time_l1(model, times, teacher_forcing_mode, mcq, explain_algo, provide_state)
-
-        raise NotImplementedError(teacher_forcing_mode)
+    #
+    # def test_multi_time_l1(self, model, times, teacher_forcing_mode, mcq, explain_algo, provide_state):
+    #     teacher_forcing = teacher_forcing_mode == "l1"
+    #
+    #     coverages = []
+    #     meds = []
+    #     fail_cnt = 0
+    #
+    #     # run multi times
+    #     for i in range(times):
+    #         try:
+    #             cov_result, med_result = self.test_one_time(model, teacher_forcing, mcq, explain_algo)
+    #
+    #             logger.info(f"Evaluation metric #{i}: cov_result: {cov_result}, med_result: {med_result}")
+    #
+    #             coverages.append(cov_result)
+    #             meds.append(med_result)
+    #
+    #         except Exception as e:
+    #             logger.warning("failed this trial, error: {}".format(e))
+    #             fail_cnt += 1
+    #
+    #     return coverages, meds, fail_cnt
+    #
+    # def test_multi_time(self, model, times, teacher_forcing_mode="l0", mcq=False, explain_algo=False,
+    #                     provide_state=False):
+    #     assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
+    #
+    #     if teacher_forcing_mode in ["l0", "l1"]:
+    #         return self.test_multi_time_l1(model, times, teacher_forcing_mode, mcq, explain_algo, provide_state)
+    #
+    #     raise NotImplementedError(teacher_forcing_mode)
