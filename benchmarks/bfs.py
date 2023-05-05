@@ -10,6 +10,7 @@ from loguru import logger
 from models import BFSModel
 from utils import DialogLogger
 
+
 def generate_graph(node_num):
     generation_success = False
     graph = None
@@ -18,6 +19,7 @@ def generate_graph(node_num):
         generation_success = is_connected(graph)
 
     return graph
+
 
 def bfs_ground_truths(graph, start):
     nodes = graph.nodes
@@ -118,6 +120,7 @@ def get_min_edit_distance(path, target):
 
     return D[n][m]
 
+
 def extract_int(s):
     def isint(word):
         try:
@@ -128,8 +131,10 @@ def extract_int(s):
 
     return [int(word) for word in re.split("\n|,| |\t|\(|\)|\[|\]|\.|{|}", s) if isint(word)]
 
+
 def extract_next_level_nodes(response):
     return extract_int(response[response.index("{"):response.index("}") + 1])
+
 
 class BfsEvaluator():
     def __init__(self):
@@ -173,7 +178,7 @@ class BfsEvaluator():
 
         prompt += "If you get it, answer OK, " \
                   "then I will tell you the start node ID. " \
-                  "You can assume that you have traversed the start node, which means you the nodes B that you will traverse next should not contains the start node." \
+                  "You can assume that you have traversed the start node, which means you the nodes B that you will traverse next should not contains the start node."
 
         self.dialog_logger.info(Q=prompt)
 
@@ -196,7 +201,6 @@ class BfsEvaluator():
         graph = generate_graph(node_num)
         logger.info('Generated random graph: nodes: {}, edges: {}'.format(graph.nodes, graph.edges))
         start_node = random.randint(0, node_num - 1)
-        adjacent_nodes = [edge[1] for edge in graph.edges(start_node)]
 
         # all_results is a list. Each element of it is also a list which is like (node_history, distance, min_dist_path)
         all_results, level_to_node, node_to_level = bfs_ground_truths(graph, start_node)
@@ -204,6 +208,25 @@ class BfsEvaluator():
         self.level_to_node = level_to_node
         self.node_to_level = node_to_level
 
+        coverages, min_edit_distances = self.traverse_graph(model, graph, start_node, teacher_forcing, mcq,
+                                                            explain_algo, provide_state)
+
+        # calc final metric
+        cov_result = 0
+        for coverage in coverages:
+            cov_result = cov_result + 1 - coverage
+
+        med_result = 0
+        for min_edit_distance in min_edit_distances:
+            med_result = med_result + min_edit_distance
+
+        logger.info(f"cov_result: {cov_result}")
+        logger.info(f"med_result: {med_result}")
+
+        return cov_result, med_result
+
+    def traverse_graph(self, model, graph, start_node, teacher_forcing=False, mcq=False, explain_algo=False,
+                       provide_state=False):
         # prepare param
         cur_level = 0
         visited_nodes = {start_node}
@@ -214,7 +237,8 @@ class BfsEvaluator():
         coverages = []
         min_edit_distances = []
 
-        # START prompt
+        # START
+        adjacent_nodes = [edge[1] for edge in graph.edges(start_node)]
         prompt = f"START. " \
                  f'The start node is {start_node}. ' \
                  f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
@@ -222,8 +246,8 @@ class BfsEvaluator():
         while response_cnt < 40 and retry_cnt <= 3:
             response_cnt += 1
 
+            # response
             self.dialog_logger.info(Q=prompt)
-            # model response
             model_response = model(prompt).lower()
 
             if teacher_forcing:
@@ -234,6 +258,7 @@ class BfsEvaluator():
                 teacher_response = ""
                 self.dialog_logger.info(A=model_response)
 
+            # analyse model response
             try:
                 if "have visited all nodes" in model_response:
                     break
@@ -242,7 +267,7 @@ class BfsEvaluator():
                 if "traverse nodes" not in model_response:
                     raise RuntimeError("'traverse nodes; not in model_response")
 
-                # refresh param
+                # extract next nodes from model response
                 next_level_nodes = extract_next_level_nodes(model_response)
 
                 # update level
@@ -263,7 +288,8 @@ class BfsEvaluator():
                 else:
                     cur_level_nodes = next_level_nodes
 
-                adjacent_nodes = list(set([edge[1] for next_node in cur_level_nodes for edge in graph.edges(next_node)]))
+                adjacent_nodes = list(
+                    set([edge[1] for next_node in cur_level_nodes for edge in graph.edges(next_node)]))
 
                 # record metric coverage
                 visited_nodes = visited_nodes.union(set(cur_level_nodes))
@@ -287,6 +313,7 @@ class BfsEvaluator():
 
                 logger.info(f"visited_nodes: {visited_nodes}")
 
+                # have traversed all nodes
                 if len(visited_nodes) == len(graph.nodes):
                     break
 
@@ -298,17 +325,4 @@ class BfsEvaluator():
                              "Try again. Please do not include any reasoning in your response. " \
                              + prompt
                 retry_cnt += 1
-
-        # calc final metric
-        cov_result = 0
-        for coverage in coverages:
-            cov_result = cov_result + 1 - coverage
-
-        med_result = 0
-        for min_edit_distance in min_edit_distances:
-            med_result = med_result + min_edit_distance
-
-        logger.info(f"cov_result: {cov_result}")
-        logger.info(f"med_result: {med_result}")
-
-        return cov_result, med_result
+        return coverages, min_edit_distances
