@@ -25,11 +25,6 @@ class ModelInput:
         print(prompt[prompt.rindex("["):])
         self.adjacency = extract_int(prompt[prompt.rindex("["):])
 
-
-# prompt = "'START. The start node is 4. Adjacent nodes of node4 are [3]'"
-# model_input = ModelInput(prompt)
-# tmp = re.split("\n|,| |\t|\(|\)|\[|\]|\.", prompt)
-# print(tmp)
 class BFSModel:
 
     def __init__(self):
@@ -49,8 +44,6 @@ class BFSModel:
 
         adjacency = input.adjacency
 
-        print("teacher adjacency: ", adjacency)
-
         next_adjacency = set()
         for adj_node in adjacency:
             if adj_node not in self.visited:
@@ -60,7 +53,7 @@ class BFSModel:
         if next_adjacency:
             return "Next i will traverse nodes {}".format(next_adjacency)
 
-        return f'over\n'
+        return f'I have visited all nodes of the graph.'
 
     def teacher_force(self, new_reply):
         return  # optimal model does not need teacher forcing

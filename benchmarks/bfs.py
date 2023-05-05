@@ -10,7 +10,6 @@ from loguru import logger
 from models import BFSModel
 from utils import DialogLogger
 
-
 def generate_graph(node_num):
     generation_success = False
     graph = None
@@ -19,7 +18,6 @@ def generate_graph(node_num):
         generation_success = is_connected(graph)
 
     return graph
-
 
 def bfs_ground_truths(graph, start):
     nodes = graph.nodes
@@ -62,30 +60,21 @@ def bfs_ground_truths(graph, start):
             bfs_all_path(new_queue, new_visited, new_distance, new_path, new_history)
 
     def bfs_level(graph, start_node):
-        # 存储每个节点所在的层数和遍历结果
         levels = {start_node: 0}
         level_to_node = {0: [start_node]}
 
-        # 初始化队列
         queue = deque([(start_node, 0)])
 
-        # 遍历队列
         while queue:
-            # 取出队列中的第一个元素
             node, level = queue.popleft()
 
-            # 遍历该节点的所有邻居节点
             for neighbor in graph[node]:
-                # 如果邻居节点未被遍历过
                 if neighbor not in levels:
-                    # 记录邻居节点所在的层数和遍历结果
                     levels[neighbor] = level + 1
                     level_to_node[level + 1] = level_to_node.get(level + 1, []) + [neighbor]
 
-                    # 将邻居节点加入队列
                     queue.append((neighbor, level + 1))
 
-        # 构造节点到层数的映射
         node_to_level = {node: level for level, nodes in level_to_node.items() for node in nodes}
 
         return level_to_node, node_to_level
@@ -142,9 +131,6 @@ def extract_int(s):
 def extract_next_level_nodes(response):
     return extract_int(response[response.index("{"):response.index("}") + 1])
 
-# response = "next i will traverse nodes {1, 3}.         "
-# response = response[response.index("{"):response.index("}") + 1]
-# te = extract_next_level_nodes(response)
 class BfsEvaluator():
     def __init__(self):
         self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
@@ -169,7 +155,7 @@ class BfsEvaluator():
                  "This list C contains the neighbouring nodes of each node in B" \
                  "Please use the BFS algorithm traverse this graph\n" \
                  "The game will finish once you have visited all the nodes in the graph. \n" \
-                 "If you visited all the nodes in the graph, response me with 'over.'" \
+                 "If you visited all the nodes in the graph, response me with 'I have visited all nodes of the graph.'" \
                  "Please traverse the entire graph in as few rounds as possible."
 
         if explain_algo:
@@ -184,9 +170,6 @@ class BfsEvaluator():
                       "4. Repeat steps 2-3 until the queue is empty.\n" \
                       "The algorithm is called 'breadth-first' because it explores all the vertices at the current level before moving on to the next level. " \
                       "In other words, it explores the graph in a level-by-level manner, from the starting vertex to the farthest vertex.\n"
-
-        # if teacher_forcing:
-        #     prompt += "If multiple unexplored interfaces exist, break tie by selecting interface with smaller id value"
 
         prompt += "If you get it, answer OK, " \
                   "then I will tell you the start node ID. " \
@@ -204,21 +187,17 @@ class BfsEvaluator():
         return "ok" in reply
 
     def test_one_time(self, model, teacher_forcing=False, mcq=False, explain_algo=False, provide_state=False):
-
         self.reset()
         if not self.init_model(model, teacher_forcing, explain_algo):
             raise RuntimeError("failed to init model")
 
         # generate graph and start node
-        # node_num = 4
         node_num = random.randint(3, 10)
         graph = generate_graph(node_num)
+        logger.info('Generated random graph: nodes: {}, edges: {}'.format(graph.nodes, graph.edges))
         start_node = random.randint(0, node_num - 1)
         adjacent_nodes = [edge[1] for edge in graph.edges(start_node)]
 
-        logger.info('Generated random graph: nodes: {}, edges: {}'.format(graph.nodes, graph.edges))
-
-        # correct bfs results, used to compare with model response
         # all_results is a list. Each element of it is also a list which is like (node_history, distance, min_dist_path)
         all_results, level_to_node, node_to_level = bfs_ground_truths(graph, start_node)
         self.all_path = [result[0] for result in all_results]
@@ -228,23 +207,21 @@ class BfsEvaluator():
         # prepare param
         cur_level = 0
         visited_nodes = {start_node}
+        retry_cnt = 0
+        response_cnt = 0
 
+        # metric
         coverages = []
         min_edit_distances = []
 
-        retry_cnt = 0
-        response_cnt = 0
-        model_response = ""
-
-        # START
+        # START prompt
         prompt = f"START. " \
                  f'The start node is {start_node}. ' \
                  f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
 
-        # if mcq:
-        #     prompt += f"Choose response from the following selections: 'over', move to {cur_node}"
-
         while response_cnt < 40 and retry_cnt <= 3:
+            response_cnt += 1
+
             self.dialog_logger.info(Q=prompt)
             # model response
             model_response = model(prompt).lower()
@@ -258,71 +235,71 @@ class BfsEvaluator():
                 self.dialog_logger.info(A=model_response)
 
             try:
-                if teacher_forcing and "over" in teacher_response:
-                    break
-
-                # decide if model finished
-                if "over" in model_response:
+                if "have visited all nodes" in model_response:
                     break
 
                 # start processing response in this iteration
-                if "traverse nodes" in model_response:
-                    # refresh param
-                    next_level_nodes = extract_next_level_nodes(model_response)
+                if "traverse nodes" not in model_response:
+                    raise RuntimeError("'traverse nodes; not in model_response")
 
-                    # TODO
-                    # if mcq:
-                    #     prompt += "Choose response from the following selections: 'over. distance is N', {}".format(
-                    #         ', '.join(["'move to " + str(i) + "'" for i in graph.nodes]))
+                # refresh param
+                next_level_nodes = extract_next_level_nodes(model_response)
 
-                    # update level info
-                    cur_level += 1
-                    cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
+                # update level
+                cur_level += 1
+                cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
+                if cur_level_nodes_ground_truth:
+                    levels_ground_truth = [cur_level for _ in cur_level_nodes_ground_truth]
+                else:
+                    levels_ground_truth = []
 
-                    # record metric min_edit_distance
-                    levels = [self.node_to_level.get(next_level_node) for next_level_node in next_level_nodes]
-                    levels_ground_truth = [cur_level for i in cur_level_nodes_ground_truth]
-                    cur_min_edit_distance = get_min_edit_distance(levels, levels_ground_truth)
-                    min_edit_distances.append(cur_min_edit_distance)
+                # record metric min_edit_distance
+                levels = [self.node_to_level.get(next_level_node) for next_level_node in next_level_nodes]
+                cur_min_edit_distance = get_min_edit_distance(levels, levels_ground_truth)
+                min_edit_distances.append(cur_min_edit_distance)
 
-                    if teacher_forcing:
-                        # l0 teacher force path always follow ground truth path
-                        cur_level_nodes = cur_level_nodes_ground_truth
+                if teacher_forcing:
+                    cur_level_nodes = cur_level_nodes_ground_truth
+                else:
+                    cur_level_nodes = next_level_nodes
+
+                adjacent_nodes = list(set([edge[1] for next_node in cur_level_nodes for edge in graph.edges(next_node)]))
+
+                # record metric coverage
+                visited_nodes = visited_nodes.union(set(cur_level_nodes))
+                cur_coverage = len(visited_nodes) / len(graph.nodes)
+                coverages.append(cur_coverage)
+
+                logger.info(f"cur_coverage: {cur_coverage}")
+                logger.info(f"cur_min_edit_distance: {cur_min_edit_distance}")
+
+                if provide_state:
+                    no_visited_nodes = set(graph.nodes).difference(visited_nodes)
+                    if len(no_visited_nodes) == 0:
+                        prompt += " You have visited all nodes of the graph."
                     else:
-                        cur_level_nodes = next_level_nodes
+                        prompt += " You have not visited node{}.".format(
+                            ', '.join([str(i) for i in no_visited_nodes]))
 
-                    adjacent_nodes = list(set([edge[1] for next_node in cur_level_nodes for edge in graph.edges(next_node)]))
+                prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}." \
+                         f"If you already traverse all nodes of the graph, " \
+                         f"response 'I have visited all nodes of the graph.'"
 
-                    # record metric coverage
-                    visited_nodes.intersection(set(cur_level_nodes))
-                    cur_coverage = len(visited_nodes) / len(graph.nodes)
-                    coverages.append(cur_coverage)
+                logger.info(f"visited_nodes: {visited_nodes}")
 
-                    response_cnt += 1
-                    retry_cnt = 0
+                if len(visited_nodes) == len(graph.nodes):
+                    break
 
-                    if provide_state:
-                        no_visited_nodes = set(graph.nodes).difference(visited_nodes)
-                        if len(no_visited_nodes) == 0:
-                            prompt += " You have visited all nodes of the graph."
-                        else:
-                            prompt += " You have not visited node{}.".format(
-                                ', '.join([str(i) for i in no_visited_nodes]))
-
-                    prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
-
-                    prompt += "If you already traverse all nodes of the graph, response 'over'"
-            except:
+                retry_cnt = 0
+            except Exception as e:
+                logger.error(e)
                 if retry_cnt == 0:
                     prompt = "Invalid response. " \
                              "Try again. Please do not include any reasoning in your response. " \
                              + prompt
-
                 retry_cnt += 1
 
-        # if "over" not in model_response:
-        #     raise RuntimeError("over not in model_response")
-
+        # calc final metric
         cov_result = 0
         for coverage in coverages:
             cov_result = cov_result + 1 - coverage
@@ -335,35 +312,3 @@ class BfsEvaluator():
         logger.info(f"med_result: {med_result}")
 
         return cov_result, med_result
-    #
-    # def test_multi_time_l1(self, model, times, teacher_forcing_mode, mcq, explain_algo, provide_state):
-    #     teacher_forcing = teacher_forcing_mode == "l1"
-    #
-    #     coverages = []
-    #     meds = []
-    #     fail_cnt = 0
-    #
-    #     # run multi times
-    #     for i in range(times):
-    #         try:
-    #             cov_result, med_result = self.test_one_time(model, teacher_forcing, mcq, explain_algo)
-    #
-    #             logger.info(f"Evaluation metric #{i}: cov_result: {cov_result}, med_result: {med_result}")
-    #
-    #             coverages.append(cov_result)
-    #             meds.append(med_result)
-    #
-    #         except Exception as e:
-    #             logger.warning("failed this trial, error: {}".format(e))
-    #             fail_cnt += 1
-    #
-    #     return coverages, meds, fail_cnt
-    #
-    # def test_multi_time(self, model, times, teacher_forcing_mode="l0", mcq=False, explain_algo=False,
-    #                     provide_state=False):
-    #     assert teacher_forcing_mode in ["l0", "l1", "l2", "l3", "l4"], teacher_forcing_mode
-    #
-    #     if teacher_forcing_mode in ["l0", "l1"]:
-    #         return self.test_multi_time_l1(model, times, teacher_forcing_mode, mcq, explain_algo, provide_state)
-    #
-    #     raise NotImplementedError(teacher_forcing_mode)
