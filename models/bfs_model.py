@@ -30,13 +30,18 @@ class BFSModel:
         self.reset("")
 
     def reset(self, instruction):
-        self.visited = {0}
-        self.history = [{0}]
-        self.node_stack = [{0}]  # dfs trajectory
+        self.visited = set()
+        self.history = []
+        self.node_stack = []  # dfs trajectory
 
     def __call__(self, prompt):
         input = ModelInput(prompt)
         adjacency = input.adjacency
+
+        if "START" in prompt:
+            self.visited.add(input.cur_node)
+            self.history.append({input.cur_node})
+            self.node_stack.append({input.cur_node})
 
         next_adjacency = set()
         for adj_node in adjacency:
