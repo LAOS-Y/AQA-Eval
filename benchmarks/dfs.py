@@ -180,22 +180,19 @@ class DFSEvaluator():
         '''
         Return:
         - accuracy: percentage of node selected following dfs
-        - covs: list of (1 - coverages)
+        - decov_list: list of (1 - coverages)
         - trace of node explored by model
         '''
-
-        # info required for recording and iterative eval
-        cnt = 0
-        curr_node = self._start_node
-
-        prompt = self._get_prompt(curr_node, [])
-
-        retry_cnt = 0
-
-        node_history = [curr_node]
-
         correct_cnt = 0
-        covs = [1 - 1 / len(self._graph.nodes)]
+        decov_list = [self.calc_decoverage(self._start_node, [])]
+        dfs_flag = True
+
+        curr_node = self._start_node
+        node_history = [self._start_node]
+        prompt = self._get_prompt(self._start_node, [])
+
+        cnt = 0
+        retry_cnt = 0
 
         while cnt < 20 and retry_cnt <= 3:
             self.dialog_logger.info(Q=prompt)
@@ -204,47 +201,55 @@ class DFSEvaluator():
             self.dialog_logger.info(A=reply)
 
             # start processing response in this iteration
-            try:
-                curr_node, dfs_correct, cov = self.single_step_metric(
-                    curr_node, reply, node_history
-                )
+            next_node = self.extract_answer(reply, self._get_adj_nodes(curr_node))
+            if isinstance(next_node, Invalid):
+                # if `reply` is formatted, force the new reply
+                if self.format_tolerant and isinstance(next_node, ValueInvalid):
+                    formatted = next_node.output
+                    assert isinstance(formatted, int)
+                    logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
+                    model.force(str(formatted))
 
-                node_history.append(curr_node)
-
-                prompt = self._get_prompt(curr_node, node_history)
-
-                if dfs_correct:
-                    correct_cnt += 1
-                covs.append(1 - cov)
-
-                cnt += 1
-                retry_cnt = 0
-
-                # if all node visited, finish
-                if cov == 1.0:
-                    break
-            except Exception as e:
-                print(e)
                 if retry_cnt == 0:
                     prompt = "Invalid response. Try again. Please do not include any reasoning " \
                              "in your response. " + prompt
                 retry_cnt += 1
+                continue
+
+            # `dfs_flag` will remain `True` until `model` stops following dfs
+            dfs_flag = dfs_flag and self._check_dfs(next_node, node_history)
+            if dfs_flag:
+                correct_cnt += 1
+
+            decov = self.calc_decoverage(next_node, node_history)
+            decov_list.append(decov)
+
+            cnt += 1
+            retry_cnt = 0
+
+            # if all node visited, finish
+            if decov == 0.0:
+                break
+
+            node_history.append(next_node)
+            curr_node = next_node
+            prompt = self._get_prompt(curr_node, node_history)
 
         if cnt == 0:
-            return 0, covs, node_history
-        return correct_cnt / cnt, covs, node_history
+            return 0, decov_list, node_history
+        return correct_cnt / cnt, decov_list, node_history
 
     def _test_tf(self, model):
         '''
         Return:
         - accuracy: percentage of node selected following dfs
-        - covs: list of (1 - coverages)
+        - decov_list: list of (1 - coverages)
         - trace of node explored by model
         '''
         correct_cnt = 0
         decov_list = [self.calc_decoverage(self._start_node, [])]
+
         curr_node = self._start_node
-        # info required for recording and iterative eval
         node_history = [self._start_node]
 
         optim_decov_sum = self.refresh_teacher_qa()
