@@ -162,11 +162,11 @@ class BfsEvaluator():
                 "Now you are on a special unweighted undirected graph A. " \
                 "This undirected graph contains a series of nodes and edges, all of which have the same weight." \
                 "First I will tell you the start node, and a list named B that contains all the neighbouring nodes of the start node." \
-                "You can choose some nodes from B to traverse next by saying 'Next i will traverse nodes {...}(set of node ID number)'." \
+                "You can choose some nodes from B to traverse next by return then set {...} of node ID number u will traverse." \
                 "The nodes that you choose from B formed list C" \
                 "After you tell me C, i will tell you a new list B." \
                 "This list B contains the neighbouring nodes of each node in C." \
-                "And then, again you tell me the set of nodes that you will traverse next by saying 'Next i will traverse nodes {...}(set of node ID number)'." \
+                "And then, again you tell me the set of nodes that you will traverse next by return then set {...} of node ID number u will traverse." \
                 "The cycle continues until the end of the game."\
                 "The game will finish once you have visited all the nodes in the graph. \n" \
                 "If you visited all the nodes in the graph, response me with 'I have visited all nodes of the graph.'" \
@@ -255,7 +255,7 @@ class BfsEvaluator():
             )
         }
 
-        return cov_result, med_result, full_result
+        return cov_result, med_result, full_result, coverages[-1]
 
     def _test_no_tf(self, model, start_node, mcq=False, provide_state=False):
         # prepare param

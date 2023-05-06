@@ -50,7 +50,7 @@ class BFSModel:
                 self.visited.add(adj_node)
 
         if next_adjacency:
-            return "Next i will traverse nodes {}".format(next_adjacency)
+            return next_adjacency
 
         return f'I have visited all nodes of the graph.'
 
