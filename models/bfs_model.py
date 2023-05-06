@@ -27,20 +27,15 @@ class ModelInput:
 class BFSModel:
 
     def __init__(self):
-        self.visited = set()
+        self.reset("")
 
     def reset(self, instruction):
-        self.visited = set()
+        self.visited = {0}
+        self.history = [{0}]
+        self.node_stack = [{0}]  # dfs trajectory
 
     def __call__(self, prompt):
-        if "ok" in prompt:
-            self.reset()
-            return "ok"
-
         input = ModelInput(prompt)
-        if "START" in prompt:
-            self.visited.add(input.cur_node)
-
         adjacency = input.adjacency
 
         next_adjacency = set()
@@ -50,9 +45,13 @@ class BFSModel:
                 self.visited.add(adj_node)
 
         if next_adjacency:
+            self.history.append(next_adjacency)
+            self.node_stack.append(next_adjacency)
             return str(next_adjacency)
 
-        return f'I have visited all nodes of the graph.'
+        if len(self.node_stack) == 0:
+            return "over"
 
     def force(self, new_reply):
-        return
+        self.history[-1] = new_reply
+        self.node_stack[-1] = new_reply
