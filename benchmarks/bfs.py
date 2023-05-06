@@ -156,25 +156,15 @@ class BfsEvaluator():
 
     @property
     def default_insturction(self):
-        return "Let's play a game, one question and one answer at a time." \
-                "Now you are on a special unweighted undirected graph A. " \
-                "This undirected graph contains a series of nodes and edges, all of which have the same weight." \
-                "First I will tell you the start node, and a list named B that contains all the neighbouring nodes of the start node." \
-                "You can choose some nodes from B to traverse next, and then tell me nodes you choose in a set format." \
+        return "You are required to visit all the nodes in a special unweighted undirected non-cyclic graph." \
+               "A unweighted undirected non-cyclic graph contains a series of nodes and edges, all of which have the same weight." \
+               "First I will tell you the start node, and a list named B that contains all the neighbouring nodes of the start node." \
+               "You can choose some nodes from B to traverse next, and then tell me nodes you choose in a set format." \
                "For example, '{0, 1, 2}' means you choose node0, node1 and node2." \
                "Please do not include any reasoning in your response, only response a pure set." \
-               "The nodes that you choose from B formed list C" \
-                "After you tell me C, i will tell you a new list B." \
-                "This list B contains the neighbouring nodes of each node in C." \
-                "And then, again you tell me the set of nodes that you will traverse next by saying a set like '{0, 1, 2}'" \
-                "The cycle continues until the end of the game."\
-                "The game will finish once you have visited all the nodes in the graph. \n" \
-                "If you visited all the nodes in the graph, response me with 'I have visited all nodes of the graph.'" \
-                "Please traverse the entire graph in as few rounds as possible." \
-                "If you get it, answer OK, " \
-                "then I will tell you the start node ID. " \
-                "You can assume that you have traversed the start node, which means you the nodes B that you will traverse next should not contains the start node."
-
+               "Every time you tell me a set, you will be given the neighbouring nodes of each node in the previous set." \
+               "The game will finish once you have visited all the nodes in the graph. \n" \
+               "Please traverse the entire graph in as few rounds as possible."
     def test_one_time(self, model, teacher_forcing=False, mcq=False, explain_algo=False, provide_state=False, instruction=None):
         self.reset()
         self.reset_model(model, instruction, explain_algo)
