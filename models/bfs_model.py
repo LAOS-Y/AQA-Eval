@@ -22,7 +22,7 @@ class ModelInput:
             if len(raw) <= 1:
                 return
             self.cur_node = raw[0]
-        self.adjacency = extract_int(prompt[prompt.rindex("["):])
+        self.adjacency = extract_int(prompt[prompt.rindex("["):prompt.rindex("]") + 1])
 
 class BFSModel:
 
