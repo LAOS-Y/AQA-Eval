@@ -137,24 +137,22 @@ def extract_next_level_nodes(response):
 
 
 class BfsEvaluator():
-    def __init__(self, instruction=None, node_num=4):
+    def __init__(self, node_num=4):
         self.node_num = node_num
         self.teacher_qa_list = []
-        self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
         self.teacher = BFSModel()
         self.all_path = []
         self.level_to_node = {}
         self.node_to_level = {}
-        self.instruction = self.default_insturction if instruction is None else instruction
 
-    def reset(self, instruction=None):
+    def reset(self):
         self.teacher_qa_list = []
-        self.dialog_logger = DialogLogger(order=["Q", "A", "T"])
-        self.teacher.reset()
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+        self.teacher = BFSModel()
         self.all_path = []
         self.level_to_node = {}
         self.node_to_level = {}
-        self.instruction = self.default_insturction if instruction is None else instruction
 
     @property
     def default_insturction(self):
@@ -162,11 +160,13 @@ class BfsEvaluator():
                 "Now you are on a special unweighted undirected graph A. " \
                 "This undirected graph contains a series of nodes and edges, all of which have the same weight." \
                 "First I will tell you the start node, and a list named B that contains all the neighbouring nodes of the start node." \
-                "You can choose some nodes from B to traverse next by return then set {...} of node ID number u will traverse." \
-                "The nodes that you choose from B formed list C" \
+                "You can choose some nodes from B to traverse next, and then tell me nodes you choose in a set format." \
+               "For example, '{0, 1, 2}' means you choose node0, node1 and node2." \
+               "Please do not include any reasoning in your response, only response a pure set." \
+               "The nodes that you choose from B formed list C" \
                 "After you tell me C, i will tell you a new list B." \
                 "This list B contains the neighbouring nodes of each node in C." \
-                "And then, again you tell me the set of nodes that you will traverse next by return then set {...} of node ID number u will traverse." \
+                "And then, again you tell me the set of nodes that you will traverse next by saying a set like '{0, 1, 2}'" \
                 "The cycle continues until the end of the game."\
                 "The game will finish once you have visited all the nodes in the graph. \n" \
                 "If you visited all the nodes in the graph, response me with 'I have visited all nodes of the graph.'" \
@@ -175,37 +175,9 @@ class BfsEvaluator():
                 "then I will tell you the start node ID. " \
                 "You can assume that you have traversed the start node, which means you the nodes B that you will traverse next should not contains the start node."
 
-    def init_model(self, model, teacher_forcing=False, explain_algo=False):
-        prompt = self.instruction
-        if explain_algo:
-            prompt += "Please use the BFS algorithm traverse this graph.\n" \
-                      "BFS stands for Breadth First Search. " \
-                      "It is a popular algorithm used to traverse a graph or a tree data structure. " \
-                      "The algorithm starts from a given vertex, and explores all its adjacent vertices at the current level before moving on to the next level. " \
-                      "The main idea behind BFS is to explore all the nodes at a given level before moving on to the next level.\n" \
-                      "The algorithm works as follows:\n" \
-                      "1. Initialize a queue data structure and add the starting vertex to the queue.\n" \
-                      "2. While the queue is not empty, remove the first vertex from the queue and mark it as visited.\n" \
-                      "3. For each of the unvisited adjacent vertices of the removed vertex, add them to the queue.\n" \
-                      "4. Repeat steps 2-3 until the queue is empty.\n" \
-                      "The algorithm is called 'breadth-first' because it explores all the vertices at the current level before moving on to the next level. " \
-                      "In other words, it explores the graph in a level-by-level manner, from the starting vertex to the farthest vertex.\n"
-
-        self.dialog_logger.info(Q=prompt)
-
-        reply = model(prompt).lower()
-        if teacher_forcing:
-            self.dialog_logger.info(A=reply, T="ok")
-            model.force("ok")
-            return True
-
-        self.dialog_logger.info(A=reply)
-        return "ok" in reply
-
-    def test_one_time(self, model, teacher_forcing=False, mcq=False, explain_algo=False, provide_state=False):
+    def test_one_time(self, model, teacher_forcing=False, mcq=False, explain_algo=False, provide_state=False, instruction=None):
         self.reset()
-        if not self.init_model(model, teacher_forcing, explain_algo):
-            raise RuntimeError("failed to init model")
+        self.reset_model(model, instruction, explain_algo)
 
         # generate graph and start node
         self.graph = generate_graph(self.node_num)
@@ -233,6 +205,7 @@ class BfsEvaluator():
         full_result = {
             "med_sum": med_result,
             "inv_cov_sum": cov_result,
+            "inv_cov_min": coverages[-1],
             "output": dict(
                 guess_list=model_node_history,
                 inv_coverage_list=coverages,
@@ -247,7 +220,7 @@ class BfsEvaluator():
                 mcq=mcq,
                 explain_algo=explain_algo,
                 provide_state=provide_state,
-                instruction=self.instruction
+                instruction=self.default_insturction if instruction is None else instruction
             ),
             "history": dict(
                 model_history=model.history,
@@ -255,7 +228,32 @@ class BfsEvaluator():
             )
         }
 
-        return cov_result, med_result, full_result, coverages[-1]
+        return cov_result, coverages[-1], med_result, full_result
+
+    def reset_model(self, model, instruction=None, explain_algo=False, verbose=True):
+        # clear dialog history and give instruction
+        # will use `self.default_insturction` if `instruction` is None
+        if instruction is None:
+            instruction = self.default_insturction
+
+        if explain_algo:
+            instruction += "Please use the BFS algorithm traverse this graph.\n" \
+                      "BFS stands for Breadth First Search. " \
+                      "It is a popular algorithm used to traverse a graph or a tree data structure. " \
+                      "The algorithm starts from a given vertex, and explores all its adjacent vertices at the current level before moving on to the next level. " \
+                      "The main idea behind BFS is to explore all the nodes at a given level before moving on to the next level.\n" \
+                      "The algorithm works as follows:\n" \
+                      "1. Initialize a queue data structure and add the starting vertex to the queue.\n" \
+                      "2. While the queue is not empty, remove the first vertex from the queue and mark it as visited.\n" \
+                      "3. For each of the unvisited adjacent vertices of the removed vertex, add them to the queue.\n" \
+                      "4. Repeat steps 2-3 until the queue is empty.\n" \
+                      "The algorithm is called 'breadth-first' because it explores all the vertices at the current level before moving on to the next level. " \
+                      "In other words, it explores the graph in a level-by-level manner, from the starting vertex to the farthest vertex.\n"
+        if verbose:
+            self.dialog_logger.info(System=instruction)
+
+        model.reset(instruction)
+        return
 
     def _test_no_tf(self, model, start_node, mcq=False, provide_state=False):
         # prepare param
@@ -287,10 +285,6 @@ class BfsEvaluator():
             try:
                 if "have visited all nodes" in model_response:
                     break
-
-                # start processing response in this iteration
-                if "traverse nodes" not in model_response:
-                    raise RuntimeError("'traverse nodes; not in model_response")
 
                 # update level
                 next_level = cur_level + 1
@@ -342,7 +336,7 @@ class BfsEvaluator():
         return coverages, min_edit_distances, optim_cov_sum, node_history
 
     def refresh_teacher_qa(self, start_node, mcq, provide_state):
-        self.teacher.reset()
+        self.reset_model(self.teacher, verbose=False)
         self.teacher_qa_list = []
 
         # prepare param
@@ -361,8 +355,8 @@ class BfsEvaluator():
             self.teacher_qa_list.append((prompt, response))
             cur_level += 1
             cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
-            prompt = self.generate_exploring_prompt(cur_level_nodes_ground_truth, set(node_history), mcq, provide_state)
             node_history.extend(cur_level_nodes_ground_truth)
+            prompt = self.generate_exploring_prompt(cur_level_nodes_ground_truth, set(node_history), mcq, provide_state)
             cov_sum += len(set(node_history)) / len(self.graph.nodes)
 
         return cov_sum
@@ -374,7 +368,7 @@ class BfsEvaluator():
         prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
 
         if provide_state:
-            no_visited_nodes = set(self.graph.nodes).difference(set(node_history))
+            no_visited_nodes = set(self.graph.nodes) - set(node_history)
             if len(no_visited_nodes) == 0:
                 prompt += " You have visited all nodes of the graph."
             else:

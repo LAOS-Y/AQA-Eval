@@ -9,8 +9,8 @@ MCQ = False
 EXPLAIN_ALGO = True
 STATED = True
 
-evaluator = BfsEvaluator(node_num=9)
+evaluator = BfsEvaluator(node_num=5)
 model = models.ChatGPT()
 # model = models.Davinci("text-davinci-003")
 # model = models.BFSModel()
-evaluator.test_one_time(model, teacher_forcing=False, mcq=MCQ, explain_algo=EXPLAIN_ALGO, provide_state=STATED)
+evaluator.test_one_time(model, teacher_forcing=True, mcq=MCQ, explain_algo=EXPLAIN_ALGO, provide_state=STATED)

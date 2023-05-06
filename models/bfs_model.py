@@ -29,7 +29,7 @@ class BFSModel:
     def __init__(self):
         self.visited = set()
 
-    def reset(self):
+    def reset(self, instruction):
         self.visited = set()
 
     def __call__(self, prompt):
@@ -50,9 +50,9 @@ class BFSModel:
                 self.visited.add(adj_node)
 
         if next_adjacency:
-            return next_adjacency
+            return str(next_adjacency)
 
         return f'I have visited all nodes of the graph.'
 
-    def teacher_force(self, new_reply):
-        return  # optimal model does not need teacher forcing
+    def force(self, new_reply):
+        return
