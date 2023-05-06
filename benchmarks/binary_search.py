@@ -8,14 +8,14 @@ from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_guess=None):
+    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_step=None):
         assert min <= max
         self.min = min
         self.max = max
         self.format_tolerant = format_tolerant
-        # `max_retry` and `max_guess` are only activated when not teacher forcing
+        # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
-        self.max_guess = max_guess if max_guess is not None else self.max - self.min + 1
+        self.max_step = max_step if max_step is not None else self.max - self.min + 1
         self.teacher = BSModel(min, max)
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
@@ -54,7 +54,7 @@ class BinarySearchEvaluator():
         return f"Right answer. The true number is equal to {guess}."
 
     def extract_answer(self, reply):
-        # parse reply from model and return the formated answer
+        # parse reply from model and return the formatted answer
         # return an `Invalid` if failed to do so
         if self.format_tolerant:
             nums = re.findall(r'\d+', reply)
@@ -130,7 +130,7 @@ class BinarySearchEvaluator():
         prompt = "START"
 
         while guess != self._target:
-            if len(guess_list) >= self.max_guess:
+            if len(guess_list) >= self.max_step:
                 logger.info("Max guess times reached, stop guessing now.")
                 return guess_list
 
@@ -145,9 +145,12 @@ class BinarySearchEvaluator():
                 if not isinstance(guess, Invalid):
                     break
 
-                if isinstance(guess, ValueError):
-                    logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
-                    model.force(str(guess))
+                # if `reply` is formatted, force the new reply
+                if self.format_tolerant and isinstance(guess, ValueInvalid):
+                    formatted = guess.output
+                    assert isinstance(formatted, int)
+                    logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
+                    model.force(str(formatted))
 
                 prompt = "Invalid reply. " \
                          "You can only reply with a integer number between " \
