@@ -15,3 +15,5 @@ _ext
 *.swo
 *.swp
 *~
+
+.idea
