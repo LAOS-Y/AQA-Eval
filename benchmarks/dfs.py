@@ -26,13 +26,16 @@ def get_coverage(path, nodes):
 class DFSEvaluator():
     def __init__(
         self, node_num=10, explain_algo=True, mcq=True, provide_state=True,
-        format_tolerant=True
+        format_tolerant=True, max_retry=0, max_step=20
     ):
         self.node_num = node_num
         self.explain_algo = explain_algo
         self.mcq = mcq
         self.provide_state = provide_state
         self.format_tolerant = format_tolerant
+        # `max_retry` and `max_step` are only activated when not teacher forcing
+        self.max_retry = max_retry
+        self.max_step = max_step
         self.teacher = DFSModel()
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
@@ -80,6 +83,11 @@ class DFSEvaluator():
 
         Return: prompt (string)
         '''
+
+        if len(set(node_history)) == len(self._graph.nodes):
+            return "Well Done. You have visited all the nodes in the graph. " \
+                   "Total number of steps: {}".format(len(node_history))
+
         # TODO: rename `unused_nodes` to `unvisited_adj_nodes`
         adj_nodes = self._get_adj_nodes(curr_node)
 
@@ -176,6 +184,7 @@ class DFSEvaluator():
 
         return decov_sum
 
+    # TODO: remove metric computing here
     def _test_no_tf(self, model):
         '''
         Return:
@@ -192,28 +201,30 @@ class DFSEvaluator():
         prompt = self._get_prompt(self._start_node, [])
 
         cnt = 0
-        retry_cnt = 0
+        retry_cnt = -1
 
-        while cnt < 20 and retry_cnt <= 3:
+        while decov_list[-1] != 0.0 and cnt < self.max_step and retry_cnt < self.max_retry:
             self.dialog_logger.info(Q=prompt)
 
-            reply = model(prompt).lower()
+            reply = model(prompt)
             self.dialog_logger.info(A=reply)
 
             # start processing response in this iteration
             next_node = self.extract_answer(reply, self._get_adj_nodes(curr_node))
-            if isinstance(next_node, Invalid):
-                # if `reply` is formatted, force the new reply
-                if self.format_tolerant and isinstance(next_node, ValueInvalid):
-                    formatted = next_node.output
-                    assert isinstance(formatted, int)
-                    logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
-                    model.force(str(formatted))
 
-                if retry_cnt == 0:
-                    prompt = "Invalid response. Try again. Please do not include any reasoning " \
-                             "in your response. " + prompt
+            # if `reply` is formatted, force the new reply
+            if not isinstance(next_node, FormatInvalid) \
+               and str(getattr(next_node, "output", next_node)) != reply:
+                assert self.format_tolerant
+                formatted = str(getattr(next_node, "output", next_node))
+                logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
+                model.force(formatted)
+
+            if isinstance(next_node, Invalid):
                 retry_cnt += 1
+                if retry_cnt == 0:
+                    prompt = "Invalid reply. Try again. You can only reply with a " \
+                             "integer number. " + prompt
                 continue
 
             # `dfs_flag` will remain `True` until `model` stops following dfs
@@ -225,20 +236,23 @@ class DFSEvaluator():
             decov_list.append(decov)
 
             cnt += 1
-            retry_cnt = 0
-
-            # if all node visited, finish
-            if decov == 0.0:
-                break
+            retry_cnt = -1
 
             node_history.append(next_node)
             curr_node = next_node
             prompt = self._get_prompt(curr_node, node_history)
 
+        if cnt == self.max_step:
+            logger.info("Max steps reached, stop the interaction now.")
+        elif retry_cnt == self.max_retry:
+            logger.info("Max retry times reached, stop interaction now.")
+        self.dialog_logger.info(Q=prompt)
+
         if cnt == 0:
             return 0, decov_list, node_history
         return correct_cnt / cnt, decov_list, node_history
 
+    # TODO: remove metric computing here
     def _test_tf(self, model):
         '''
         Return:
