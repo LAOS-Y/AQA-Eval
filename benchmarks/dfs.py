@@ -76,19 +76,19 @@ class DFSEvaluator():
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
-    def _get_prompt(self, curr_node, node_history):
+    def _get_prompt(self, next_node, node_history):
         '''
         Generate prompt used in exploration step
 
         Return: prompt (string)
         '''
 
-        if len(set(node_history)) == len(self._graph.nodes):
+        if len(set(node_history + [next_node])) == len(self._graph.nodes):
             return "Well Done. You have visited all the nodes in the graph. " \
-                   "Total number of steps: {}".format(len(node_history[1:]))
+                   "Total number of steps: {}".format(len(node_history[1:] + [next_node]))
 
         # TODO: rename `unused_nodes` to `unvisited_adj_nodes`
-        adj_nodes = self._get_adj_nodes(curr_node)
+        adj_nodes = self._get_adj_nodes(next_node)
 
         prompt = "Adjacent nodes: {}.".format(", ".join([str(i) for i in adj_nodes]))
 
@@ -169,25 +169,30 @@ class DFSEvaluator():
         prompt = self._get_prompt(self._start_node, [])
         decov_sum = self.calc_decoverage(self._start_node, [])
 
-        curr_node = self._start_node
+        next_node = self._start_node
         node_history = [self._start_node]
 
         # while exist node not visited
         while len(set(self._graph.nodes).difference(set(node_history))) != 0:
             response = self.teacher(prompt)
-            self._teacher_qa_list.append((prompt, response))
+            # TODO: remove `extract_int`
+            next_node = extract_int(response)[0]
 
-            curr_node = extract_int(response)[0]
-            prompt = self._get_prompt(curr_node, node_history)
-            decov_sum += self.calc_decoverage(curr_node, node_history)
-            node_history.append(curr_node)
+            self._teacher_qa_list.append((prompt, next_node))
+            prompt = self._get_prompt(next_node, node_history)
+
+            decov_sum += self.calc_decoverage(next_node, node_history)
+            node_history.append(next_node)
+
+        self._teacher_qa_list.append((prompt, None))
 
         return decov_sum
 
     def calc_metric_no_tf(self, node_history):
+        # TODO: remove the starting node in all `node_history`
         assert len(node_history) > 1
 
-        decov_list = [1.0]
+        decov_list = [self.calc_decoverage(self._start_node, [])]
         highest_cnt = 0
         check_dfs_flag = True
 
@@ -211,7 +216,33 @@ class DFSEvaluator():
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
-        return acc, min_decov, sum_decov
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        return metrics
+
+    def calc_metric_tf(self, node_history, teacher_node_history):
+        assert len(node_history) > 1
+
+        decov_list = [self.calc_decoverage(self._start_node, [])]
+        dfs_cnt = 0
+
+        for idx, node in enumerate(node_history[1:]):
+            if isinstance(node, Invalid):
+                decov_list.append(decov_list[-1])
+                continue
+
+            if self._check_dfs(node, teacher_node_history[:idx + 1]):
+                dfs_cnt += 1
+
+            decov = self.calc_decoverage(node, teacher_node_history[:idx + 1])
+            assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
+            decov_list.append(decov)
+
+        acc = dfs_cnt / len(node_history[1:])  # ignore the starting node
+        min_decov = decov_list[-1]
+        sum_decov = sum(decov_list)
+
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        return metrics
 
     def _test_no_tf(self, model):
         '''
@@ -220,16 +251,14 @@ class DFSEvaluator():
         - decov_list: list of (1 - coverages)
         - trace of node explored by model
         '''
-        curr_node = self._start_node
-        node_history = [self._start_node]
-        visited = {self._start_node, }
         prompt = self._get_prompt(self._start_node, [])
+        node_history = [self._start_node]
 
         retry_cnt = 0
 
         while (
-            len(visited) != len(self._graph.nodes) and (len(node_history) - 1) < self.max_step and
-            retry_cnt < (self.max_retry + 1)
+            len(set(node_history)) != len(self._graph.nodes) and
+            (len(node_history) - 1) < self.max_step and retry_cnt < (self.max_retry + 1)
         ):
             self.dialog_logger.info(Q=prompt)
 
@@ -237,7 +266,7 @@ class DFSEvaluator():
             self.dialog_logger.info(A=reply)
 
             # start processing response in this iteration
-            next_node = self.extract_answer(reply, self._get_adj_nodes(curr_node))
+            next_node = self.extract_answer(reply, self._get_adj_nodes(node_history[-1]))
 
             # if `reply` is formatted, force the new reply
             if not isinstance(next_node, FormatInvalid) \
@@ -248,11 +277,9 @@ class DFSEvaluator():
                 model.force(formatted)
 
             if not isinstance(next_node, Invalid):
+                prompt = self._get_prompt(next_node, node_history)
                 node_history.append(next_node)
-                visited.add(next_node)
-                curr_node = next_node
                 retry_cnt = 0
-                prompt = self._get_prompt(curr_node, node_history)
                 continue
 
             if retry_cnt == 0:
@@ -266,55 +293,40 @@ class DFSEvaluator():
         if isinstance(next_node, Invalid):
             node_history.append(next_node)  # save the last invalid
             logger.info("Max retry times reached, stop interaction now.")
-        elif len(visited) != len(self._graph.nodes):  # target not achieved
+        elif len(set(node_history)) != len(self._graph.nodes):  # target not achieved
             logger.info("Max steps reached, stop the interaction now.")
 
         return node_history
 
     # TODO: remove metric computing here
     def _test_tf(self, model):
-        '''
-        Return:
-        - accuracy: percentage of node selected following dfs
-        - decov_list: list of (1 - coverages)
-        - trace of node explored by model
-        '''
-        correct_cnt = 0
-        decov_list = [self.calc_decoverage(self._start_node, [])]
+        # correct_cnt = 0
+        # decov_list = [self.calc_decoverage(self._start_node, [])]
 
         curr_node = self._start_node
         node_history = [self._start_node]
+        teacher_node_history = [self._start_node]
 
         optim_decov_sum = self.refresh_teacher_qa()
 
         # no retry when teacher forcing
-        for prompt, teacher_reply in self._teacher_qa_list:
+        for prompt, teacher_reply in self._teacher_qa_list[:-1]:
             self.dialog_logger.info(Q=prompt)
 
             reply = model(prompt)
 
-            model.force(teacher_reply)
+            model.force(str(teacher_reply))
             self.dialog_logger.info(A=reply, T=teacher_reply)
 
             next_node = self.extract_answer(reply, self._get_adj_nodes(curr_node))
 
-            if isinstance(next_node, Invalid):
-                # coverage value does not change
-                dfs_correct = False
-                decov = decov_list[-1]
-            else:
-                dfs_correct = self._check_dfs(next_node, node_history)
-                decov = self.calc_decoverage(next_node, node_history)
+            node_history.append(next_node)
+            teacher_node_history.append(teacher_reply)
+            curr_node = teacher_reply
 
-            if dfs_correct:
-                correct_cnt += 1
-            decov_list.append(decov)
-            print(decov)
+        self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
-            curr_node = int(teacher_reply)
-            node_history.append(curr_node)
-
-        return correct_cnt / len(self._teacher_qa_list), decov_list, optim_decov_sum, node_history
+        return node_history, teacher_node_history, optim_decov_sum
 
     def test_one_time(self, model, teacher_forcing, instruction=None):
         self.reset()
@@ -328,12 +340,11 @@ class DFSEvaluator():
                     .format(self._graph.nodes, self._graph.edges))
 
         if teacher_forcing:
-            accuracy, covs, optim_decov_sum, model_node_history = self._test_tf(model)
-            metric = {"acc": accuracy, "min_decov": covs[-1], "sum_decov": sum(covs)}
+            model_node_history, teacher_node_history, optim_decov_sum = self._test_tf(model)
+            metric = self.calc_metric_tf(model_node_history, teacher_node_history)
         else:
             model_node_history = self._test_no_tf(model)
-            acc, min_decov, sum_decov = self.calc_metric_no_tf(model_node_history)
-            metric = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+            metric = self.calc_metric_no_tf(model_node_history)
 
         full_result = {}
         full_result["metric"] = metric
