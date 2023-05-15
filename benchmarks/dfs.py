@@ -1,5 +1,4 @@
 import networkx
-import random
 import re
 
 from loguru import logger
@@ -86,7 +85,7 @@ class DFSEvaluator():
 
         if len(set(node_history)) == len(self._graph.nodes):
             return "Well Done. You have visited all the nodes in the graph. " \
-                   "Total number of steps: {}".format(len(node_history))
+                   "Total number of steps: {}".format(len(node_history[1:]))
 
         # TODO: rename `unused_nodes` to `unvisited_adj_nodes`
         adj_nodes = self._get_adj_nodes(curr_node)
@@ -137,6 +136,7 @@ class DFSEvaluator():
         Return
         - boolean: if selected interface follows dfs
         '''
+        # curr_node != next_node
         curr_node = node_history[-1]
         adj_nodes = self._get_adj_nodes(curr_node)
 
@@ -184,7 +184,35 @@ class DFSEvaluator():
 
         return decov_sum
 
-    # TODO: remove metric computing here
+    def calc_metric_no_tf(self, node_history):
+        assert len(node_history) > 1
+
+        decov_list = [1.0]
+        highest_cnt = 0
+        check_dfs_flag = True
+
+        for idx, node in enumerate(node_history[1:]):  # remove the starting node
+            if isinstance(node, Invalid):
+                assert idx == len(node_history[1:]) - 1, \
+                    f"Only the last node can be Invalid without teacher forcing. {node_history}"
+                break
+
+            # `check_dfs_flag` will remain `True` until `model` stops following dfs
+            if check_dfs_flag and self._check_dfs(node, node_history[:idx + 1]):
+                highest_cnt = idx + 1
+            else:
+                check_dfs_flag = False
+
+            decov = self.calc_decoverage(node, node_history[:idx + 1])
+            assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
+            decov_list.append(decov)
+
+        acc = highest_cnt / len(node_history[1:])  # ignore the starting node
+        min_decov = decov_list[-1]
+        sum_decov = sum(decov_list)
+
+        return acc, min_decov, sum_decov
+
     def _test_no_tf(self, model):
         '''
         Return:
@@ -192,18 +220,17 @@ class DFSEvaluator():
         - decov_list: list of (1 - coverages)
         - trace of node explored by model
         '''
-        correct_cnt = 0
-        decov_list = [self.calc_decoverage(self._start_node, [])]
-        dfs_flag = True
-
         curr_node = self._start_node
         node_history = [self._start_node]
+        visited = {self._start_node, }
         prompt = self._get_prompt(self._start_node, [])
 
-        cnt = 0
-        retry_cnt = -1
+        retry_cnt = 0
 
-        while decov_list[-1] != 0.0 and cnt < self.max_step and retry_cnt < self.max_retry:
+        while (
+            len(visited) != len(self._graph.nodes) and (len(node_history) - 1) < self.max_step and
+            retry_cnt < (self.max_retry + 1)
+        ):
             self.dialog_logger.info(Q=prompt)
 
             reply = model(prompt)
@@ -220,37 +247,29 @@ class DFSEvaluator():
                 logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
                 model.force(formatted)
 
-            if isinstance(next_node, Invalid):
-                retry_cnt += 1
-                if retry_cnt == 0:
-                    prompt = "Invalid reply. Try again. You can only reply with a " \
-                             "integer number. " + prompt
+            if not isinstance(next_node, Invalid):
+                node_history.append(next_node)
+                visited.add(next_node)
+                curr_node = next_node
+                retry_cnt = 0
+                prompt = self._get_prompt(curr_node, node_history)
                 continue
 
-            # `dfs_flag` will remain `True` until `model` stops following dfs
-            dfs_flag = dfs_flag and self._check_dfs(next_node, node_history)
-            if dfs_flag:
-                correct_cnt += 1
+            if retry_cnt == 0:
+                # TODO: maybe add mcq here?
+                prompt = "Invalid reply. Try again. You can only reply with a " \
+                         "integer number. " + prompt
+            retry_cnt += 1
 
-            decov = self.calc_decoverage(next_node, node_history)
-            decov_list.append(decov)
-
-            cnt += 1
-            retry_cnt = -1
-
-            node_history.append(next_node)
-            curr_node = next_node
-            prompt = self._get_prompt(curr_node, node_history)
-
-        if cnt == self.max_step:
-            logger.info("Max steps reached, stop the interaction now.")
-        elif retry_cnt == self.max_retry:
-            logger.info("Max retry times reached, stop interaction now.")
         self.dialog_logger.info(Q=prompt)
 
-        if cnt == 0:
-            return 0, decov_list, node_history
-        return correct_cnt / cnt, decov_list, node_history
+        if isinstance(next_node, Invalid):
+            node_history.append(next_node)  # save the last invalid
+            logger.info("Max retry times reached, stop interaction now.")
+        elif len(visited) != len(self._graph.nodes):  # target not achieved
+            logger.info("Max steps reached, stop the interaction now.")
+
+        return node_history
 
     # TODO: remove metric computing here
     def _test_tf(self, model):
@@ -310,10 +329,11 @@ class DFSEvaluator():
 
         if teacher_forcing:
             accuracy, covs, optim_decov_sum, model_node_history = self._test_tf(model)
+            metric = {"acc": accuracy, "min_decov": covs[-1], "sum_decov": sum(covs)}
         else:
-            accuracy, covs, model_node_history = self._test_no_tf(model)
-
-        metric = {"accuracy": accuracy, "min_decov": covs[-1], "sum_decov": sum(covs)}
+            model_node_history = self._test_no_tf(model)
+            acc, min_decov, sum_decov = self.calc_metric_no_tf(model_node_history)
+            metric = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
 
         full_result = {}
         full_result["metric"] = metric
