@@ -111,12 +111,10 @@ class BinarySearchEvaluator():
         self._teacher_qa_list = []
 
         guess = None
-        guess_list = []
         prompt = "START"
 
         while guess != self._target:
-            guess = self.teacher(prompt)
-            guess_list.append(guess)
+            guess = int(self.teacher(prompt))
             self._teacher_qa_list.append((prompt, guess))
 
             prompt = self._get_prompt(guess)
@@ -152,9 +150,9 @@ class BinarySearchEvaluator():
                 model.force(str(formatted))
 
             if not isinstance(guess, Invalid):
+                prompt = self._get_prompt(guess)
                 guess_list.append(guess)
                 retry_cnt = 0
-                prompt = self._get_prompt(guess)
                 continue
 
             if retry_cnt == 0:

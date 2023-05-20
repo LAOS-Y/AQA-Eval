@@ -19,4 +19,4 @@ class BSModel():
 
     def __call__(self, prompt):
         self.last_guess = self.binary_search(prompt)
-        return self.last_guess
+        return str(self.last_guess)

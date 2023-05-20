@@ -174,8 +174,7 @@ class DFSEvaluator():
         # while exist node not visited
         while len(set(self._graph.nodes).difference(set(node_history))) != 0:
             response = self.teacher(prompt)
-            # TODO: remove `extract_int`
-            next_node = extract_int(response)[0]
+            next_node = int(response)
 
             self._teacher_qa_list.append((prompt, next_node))
             prompt = self._get_prompt(next_node, node_history)
@@ -297,11 +296,7 @@ class DFSEvaluator():
 
         return node_history
 
-    # TODO: remove metric computing here
     def _test_tf(self, model):
-        # correct_cnt = 0
-        # decov_list = [self.calc_decoverage(self._start_node, [])]
-
         curr_node = self._start_node
         node_history = [self._start_node]
         teacher_node_history = [self._start_node]
