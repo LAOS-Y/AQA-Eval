@@ -87,18 +87,17 @@ class DFSEvaluator():
             return "Well Done. You have visited all the nodes in the graph. " \
                    "Total number of steps: {}".format(len(node_history[1:] + [next_node]))
 
-        # TODO: rename `unused_nodes` to `unvisited_adj_nodes`
         adj_nodes = self._get_adj_nodes(next_node)
 
         prompt = "Adjacent nodes: {}.".format(", ".join([str(i) for i in adj_nodes]))
 
         if self.provide_state:
-            unused_nodes = set(adj_nodes).difference(set(node_history))
-            if len(unused_nodes) == 0:
+            unvisited_adj_nodes = set(adj_nodes).difference(set(node_history))
+            if len(unvisited_adj_nodes) == 0:
                 prompt += " You have visited all nodes adjacent to this node."
             else:
                 prompt += " You have not visited node {}." \
-                          .format(", ".join([str(i) for i in unused_nodes]))
+                          .format(", ".join([str(i) for i in unvisited_adj_nodes]))
         if self.mcq:
             prompt += " Choose the next node to visit: {}." \
                       .format(", ".join([str(i) for i in adj_nodes]))
