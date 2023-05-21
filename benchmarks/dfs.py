@@ -7,21 +7,6 @@ from models.dfs_model import DFSModel
 from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
-def extract_int(s):
-    def isint(word):
-        try:
-            int(word)
-            return True
-        except ValueError:
-            return False
-    return [int(word) for word in re.split("\n|,|\.| |\'", s) if isint(word)]
-
-
-def get_coverage(path, nodes):
-    nodes = set(nodes)
-    return len(nodes.intersection(set(path))) / len(nodes)
-
-
 class DFSEvaluator():
     def __init__(
         self, node_num=10, explain_algo=True, mcq=True, provide_state=True,
