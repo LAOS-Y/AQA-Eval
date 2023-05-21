@@ -343,10 +343,9 @@ class DFSEvaluator():
         full_result = {}
         full_result["metric"] = metric
         full_result["output"] = dict(
-            guess_list=model_node_history,
+            node_history=model_node_history,
             # inv_coverage_list=covs
-            # TODO: return `teacher_guess_list`
-            teacher_guess_list=None,
+            teacher_node_history=teacher_node_history if teacher_forcing else None
         )
         full_result["env"] = dict(
             optim_decov_sum=optim_decov_sum if teacher_forcing else None,
