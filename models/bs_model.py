@@ -5,7 +5,6 @@ class BSModel():
         self.reset()
 
     def reset(self, init_context=""):
-        self.if_start = False
         self.last_guess = None
         self.l = self.min
         self.r = self.max + 1
@@ -19,10 +18,5 @@ class BSModel():
         return (self.l + self.r) // 2
 
     def __call__(self, prompt):
-        if prompt == "START":
-            self.if_start = True
-            self.last_guess = (self.l + self.r) // 2
-
-        if self.if_start:
-            self.last_guess = self.binary_search(prompt)
-            return self.last_guess
+        self.last_guess = self.binary_search(prompt)
+        return str(self.last_guess)

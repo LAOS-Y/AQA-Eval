@@ -8,14 +8,14 @@ from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
 class BinarySearchEvaluator():
-    def __init__(self, min=0, max=100, format_tolerant=False, max_retry=0, max_guess=None):
+    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_step=None):
         assert min <= max
         self.min = min
         self.max = max
         self.format_tolerant = format_tolerant
-        # `max_retry` and `max_guess` are only activated when not teacher forcing
+        # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
-        self.max_guess = max_guess if max_guess is not None else self.max - self.min + 1
+        self.max_step = max_step if max_step is not None else self.max - self.min + 1
         self.teacher = BSModel(min, max)
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
@@ -45,7 +45,7 @@ class BinarySearchEvaluator():
         model.reset(instruction)
         return
 
-    def get_prompt(self, guess):
+    def _get_prompt(self, guess):
         if guess < self._target:
             return f"The true number is bigger than {guess}."
         if guess > self._target:
@@ -54,7 +54,7 @@ class BinarySearchEvaluator():
         return f"Right answer. The true number is equal to {guess}."
 
     def extract_answer(self, reply):
-        # parse reply from model and return the formated answer
+        # parse reply from model and return the formatted answer
         # return an `Invalid` if failed to do so
         if self.format_tolerant:
             nums = re.findall(r'\d+', reply)
@@ -111,15 +111,13 @@ class BinarySearchEvaluator():
         self._teacher_qa_list = []
 
         guess = None
-        guess_list = []
         prompt = "START"
 
         while guess != self._target:
-            guess = self.teacher(prompt)
-            guess_list.append(guess)
+            guess = int(self.teacher(prompt))
             self._teacher_qa_list.append((prompt, guess))
 
-            prompt = self.get_prompt(guess)
+            prompt = self._get_prompt(guess)
 
         self._teacher_qa_list.append((prompt, None))
 
@@ -129,46 +127,46 @@ class BinarySearchEvaluator():
         guess_list = []
         prompt = "START"
 
-        while guess != self._target:
-            if len(guess_list) >= self.max_guess:
-                logger.info("Max guess times reached, stop guessing now.")
-                return guess_list
+        retry_cnt = 0
 
+        while (
+            guess != self._target and len(guess_list) < self.max_step
+            and retry_cnt < (self.max_retry + 1)
+        ):
             self.dialog_logger.info(Q=prompt)
 
-            for _ in range(self.max_retry + 1):
-                reply = model(prompt)
-                self.dialog_logger.info(A=reply)
+            reply = model(prompt)
+            self.dialog_logger.info(A=reply)
 
-                guess = self.extract_answer(reply)
+            guess = self.extract_answer(reply)
 
-                if not isinstance(guess, Invalid):
-                    break
+            # if `reply` is formatted, force the new reply
+            if not isinstance(guess, FormatInvalid) \
+               and str(getattr(guess, "output", guess)) != reply:
+                assert self.format_tolerant
+                formatted = getattr(guess, "output", guess)
+                assert isinstance(formatted, int)
+                logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
+                model.force(str(formatted))
 
-                if isinstance(guess, ValueError):
-                    logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
-                    model.force(str(guess))
-
-                prompt = "Invalid reply. " \
-                         "You can only reply with a integer number between " \
-                         f"{self.min} and {self.max}. Try again."
-                self.dialog_logger.info(Q=prompt)
-
-            if isinstance(guess, Invalid):
+            if not isinstance(guess, Invalid):
+                prompt = self._get_prompt(guess)
                 guess_list.append(guess)
-                logger.info("Max retry times reached, stop guessing now.")
-                return guess_list
+                retry_cnt = 0
+                continue
 
-            # if the final guess is valid due to `self.format_tolerant`, force the reply
-            if str(guess) != reply:
-                assert self.format_tolerant, "Reply is changed with format tolerance disabled"
-                logger.info(f"Format tolerance enabled, force the model reply to {guess}.")
-                model.force(str(guess))
-
-            guess_list.append(guess)
-            prompt = self.get_prompt(guess)
+            if retry_cnt == 0:
+                prompt = "Invalid reply. You can only reply with a integer number between " \
+                        f"{self.min} and {self.max}. Try again." + prompt
+            retry_cnt += 1
 
         self.dialog_logger.info(Q=prompt)
+
+        if isinstance(guess, Invalid):
+            guess_list.append(guess)  # save the last invalid
+            logger.info("Max retry times reached, stop interaction now.")
+        elif guess != self._target:  # target not achieved
+            logger.info("Max steps reached, stop the interaction now.")
 
         return guess_list
 
