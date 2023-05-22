@@ -8,117 +8,13 @@ from collections import deque
 from loguru import logger
 
 from models import BFSModel
-from utils import DialogLogger
+from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
 def generate_graph(node_num):
-    generation_success = False
-    graph = None
-    while not generation_success:
-        graph = networkx.watts_strogatz_graph(node_num, 3, 0.2).to_undirected()
-        generation_success = is_connected(graph)
+    graph = networkx.random_tree(node_num).to_undirected()
 
     return graph
-
-
-def bfs_ground_truths(graph, start):
-    nodes = graph.nodes
-    edges = graph.edges
-
-    graph_dict = {node: [] for node in nodes}
-    for edge in edges:
-        graph_dict[edge[0]].append(edge[1])
-        graph_dict[edge[1]].append(edge[0])
-
-    visited = {node: False for node in nodes}
-    distance = {node: float('inf') for node in nodes}
-    path = {node: [] for node in nodes}
-    results = []
-
-    def bfs_all_path(queue, visited, distance, path, history):
-        if not queue:
-            if (history, distance, path) not in results:
-                results.append((history, distance, path))
-            return
-
-        current_node, visiting_seq = queue.popleft()
-        history.append(current_node)
-
-        for perm in permutations(graph_dict[current_node]):
-            new_queue = deque(queue)
-            new_visited = visited.copy()
-            new_distance = distance.copy()
-            new_path = {node: path[node].copy() for node in nodes}
-            new_history = history.copy()
-
-            for neighbor in perm:
-                new_visiting_seq = visiting_seq + [current_node]
-                if not new_visited[neighbor]:
-                    new_visited[neighbor] = True
-                    new_distance[neighbor] = new_distance[current_node] + 1
-                    new_path[neighbor] = [p + [neighbor] for p in new_path[current_node]]
-                    new_queue.append((neighbor, new_visiting_seq))
-
-            bfs_all_path(new_queue, new_visited, new_distance, new_path, new_history)
-
-    def bfs_level(graph, start_node):
-        levels = {start_node: 0}
-        level_to_node = {0: [start_node]}
-
-        queue = deque([(start_node, 0)])
-
-        while queue:
-            node, level = queue.popleft()
-
-            for neighbor in graph[node]:
-                if neighbor not in levels:
-                    levels[neighbor] = level + 1
-                    level_to_node[level + 1] = level_to_node.get(level + 1, []) + [neighbor]
-
-                    queue.append((neighbor, level + 1))
-
-        node_to_level = {node: level for level, nodes in level_to_node.items() for node in nodes}
-
-        return level_to_node, node_to_level
-
-    queue = deque([(start, [])])
-    visited[start] = True
-    distance[start] = 0
-    path[start] = [[start]]
-    bfs_all_path(queue, visited, distance, path, [])
-
-    results = [list(result) for result in results]
-
-    for result in results:
-        result[2] = {item[0]: item[1][0] for item in result[2].items()}
-
-    level_to_node, node_to_level = bfs_level(graph_dict, start)
-
-    return results, level_to_node, node_to_level
-
-
-def get_min_edit_distance(path, target):
-    n = len(path)
-    m = len(target)
-
-    if n == 0 or m == 0:
-        return n + m
-
-    D = [[0] * (m + 1) for _ in range(n + 1)]
-
-    for i in range(n + 1):
-        D[i][0] = i
-    for i in range(m + 1):
-        D[0][i] = i
-
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            diag_loss = D[i - 1][j - 1]
-            if not path[i - 1] == target[j - 1]:
-                diag_loss += 1
-            D[i][j] = min(D[i - 1][j] + 1, D[i][j - 1] + 1, diag_loss)
-
-    return D[n][m]
 
 
 def extract_int(s):
@@ -136,23 +32,32 @@ def extract_next_level_nodes(response):
     return extract_int(response[response.index("{"):response.index("}") + 1])
 
 
-class BfsEvaluator():
-    def __init__(self, node_num=4):
+class BFSEvaluator():
+    def __init__(
+            self, node_num=4, explain_algo=True, mcq=True, provide_state=True,
+            format_tolerant=True, max_retry=0, max_step=20
+        ):
         self.node_num = node_num
-        self.teacher_qa_list = []
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+        self.mcq = mcq
+        self.explain_algo = explain_algo
+        self.provide_state = provide_state
+        self.format_tolerant = format_tolerant
+        # `max_retry` and `max_step` are only activated when not teacher forcing
+        self.max_retry = max_retry
+        self.max_step = max_step
         self.teacher = BFSModel()
-        self.all_path = []
-        self.level_to_node = {}
-        self.node_to_level = {}
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+
+        # self.all_path = []`
+        # self.level_to_node = {}
+        # self.node_to_level = {}`
 
     def reset(self):
-        self.teacher_qa_list = []
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
-        self.teacher = BFSModel()
-        self.all_path = []
-        self.level_to_node = {}
-        self.node_to_level = {}
+        self._teacher_qa_list = []
+        self.teacher.reset("")
+        # self.all_path = []
+        # self.level_to_node = {}
+        # self.node_to_level = {}
 
     @property
     def default_insturction(self):
@@ -165,25 +70,20 @@ class BfsEvaluator():
                "Every time you tell me a set, you will be given the neighbouring nodes of each node in the previous set." \
                "The game will finish once you have visited all the nodes in the graph. \n" \
                "Please traverse the entire graph in as few rounds as possible."
-    def test_one_time(self, model, teacher_forcing=False, mcq=False, explain_algo=False, provide_state=False, instruction=None):
+
+    def test_one_time(self, model, teacher_forcing=False, instruction=None):
         self.reset()
-        self.reset_model(model, instruction, explain_algo)
+        self.reset_model(model, instruction, self.explain_algo)
 
         # generate graph and start node
-        self.graph = generate_graph(self.node_num)
-        logger.info('Generated random graph: nodes: {}, edges: {}'.format(self.graph.nodes, self.graph.edges))
-        start_node = random.randint(0, self.node_num - 1)
-
-        # all_results is a list. Each element of it is also a list which is like (node_history, distance, min_dist_path)
-        all_results, level_to_node, node_to_level = bfs_ground_truths(self.graph, start_node)
-        self.all_path = [result[0] for result in all_results]
-        self.level_to_node = level_to_node
-        self.node_to_level = node_to_level
+        self._graph = generate_graph(self.node_num)
+        logger.info('Generated random graph: nodes: {}, edges: {}'.format(self._graph.nodes, self._graph.edges))
+        self._start_node = 0
 
         if teacher_forcing:
-            coverages, min_edit_distances, optim_cov_sum, model_node_history = self._test_tf(model, start_node, mcq, provide_state)
+            coverages, min_edit_distances, optim_cov_sum, model_node_history = self._test_tf(model)
         else:
-            coverages, min_edit_distances, model_node_history = self._test_no_tf(model, start_node, mcq, provide_state)
+            coverages, min_edit_distances, model_node_history = self._test_no_tf(model)
 
         # calc final metric
         cov_result = sum(coverages)
@@ -203,18 +103,18 @@ class BfsEvaluator():
             ),
             "env": dict(
                 optim_cov_sum=optim_cov_sum if teacher_forcing else None,
-                nodes=list(self.graph.nodes),
-                edges=list(self.graph.edges),
-                start_node=start_node,
+                nodes=list(self._graph.nodes),
+                edges=list(self._graph.edges),
+                start_node=self._start_node,
                 teacher_forcing=teacher_forcing,
-                mcq=mcq,
-                explain_algo=explain_algo,
-                provide_state=provide_state,
+                mcq=self.mcq,
+                explain_algo=self.explain_algo,
+                provide_state=self.provide_state,
                 instruction=self.default_insturction if instruction is None else instruction
             ),
             "history": dict(
                 model_history=model.history,
-                teacher_history=self.teacher_qa_list if teacher_forcing else None
+                teacher_history=self._teacher_qa_list if teacher_forcing else None
             )
         }
 
@@ -245,73 +145,154 @@ class BfsEvaluator():
         model.reset(instruction)
         return
 
-    def _test_no_tf(self, model, start_node, mcq=False, provide_state=False):
-        # prepare param
-        cur_level = 0
+    def _get_adj_nodes(self, curr_node):
+        return [n for _, n in self._graph.edges(curr_node)]
+
+    def _get_prompt(self, next_node, node_history):
+        '''
+        Generate prompt used in exploration step
+
+        Return: prompt (string)
+        '''
+
+        if len(set(node_history + [next_node])) == len(self._graph.nodes):
+            return "Well Done. You have visited all the nodes in the graph. " \
+                   "Total number of steps: {}".format(len(node_history[1:] + [next_node]))
+
+        adj_nodes = self._get_adj_nodes(next_node)
+
+        prompt = "Adjacent nodes: {}.".format(", ".join([str(i) for i in adj_nodes]))
+
+        if self.provide_state:
+            unvisited_adj_nodes = set(adj_nodes).difference(set(node_history))
+            if len(unvisited_adj_nodes) == 0:
+                prompt += " You have visited all nodes adjacent to this node."
+            else:
+                prompt += " You have not visited node {}." \
+                          .format(", ".join([str(i) for i in unvisited_adj_nodes]))
+        if self.mcq:
+            valid_nodes = set(
+                sum(
+                    [(self._get_adj_nodes(node) + [node]) for node in node_history + [next_node]],
+                    start=[]
+                )
+            )
+
+            valid_nodes = {str(node) for node in valid_nodes}
+
+            prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
+
+        return prompt
+
+    def generate_exploring_prompt(self, cur_level_nodes, node_history, mcq, provide_state):
+        adjacent_nodes = list(
+            set([edge[1] for next_node in cur_level_nodes for edge in self._graph.edges(next_node)]))
+
+        prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
+
+        if provide_state:
+            no_visited_nodes = set(self._graph.nodes) - set(node_history)
+            if len(no_visited_nodes) == 0:
+                prompt += " You have visited all nodes of the graph."
+            else:
+                prompt += " You have not visited node {}.".format(
+                    ', '.join([str(i) for i in no_visited_nodes]))
+
+        return prompt
+
+    def extract_answer(self, reply, adj_nodes):
+        # parse reply from model and return the formated answer
+        # return an `Invalid` if failed to do so
+        if self.format_tolerant:
+            nums = re.findall(r'\d+', reply)
+            if not len(nums):
+                return FormatInvalid(reply)
+
+            next_node = int(nums[0])
+
+            if next_node not in adj_nodes:
+                return ValueInvalid(next_node)
+            return next_node
+
+        try:
+            next_node = int(reply)
+
+            if next_node not in adj_nodes:
+                return ValueInvalid(next_node)
+            return next_node
+        except ValueError:
+            return FormatInvalid(next_node)
+
+    def _test_no_tf(self, model):
+        '''
+        Return:
+        - accuracy: percentage of node selected following dfs
+        - decov_list: list of (1 - coverages)
+        - trace of node explored by model
+        '''
+        prompt = self._get_prompt(self._start_node, [])
+        node_history = [self._start_node]
+
         retry_cnt = 0
-        response_cnt = 0
 
-        # metric
-        coverages = [1 - 1 / len(self.graph.nodes)]
-        min_edit_distances = []
+        value_valid_nodes = set([self._start_node] + self._get_adj_nodes(self._start_node))
 
-        node_history = [start_node]
-
-        # START
-        adjacent_nodes = [edge[1] for edge in self.graph.edges(start_node)]
-        prompt = f"START. " \
-                 f'The start node is {start_node}. ' \
-                 f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
-
-        while response_cnt < 40 and retry_cnt <= 3:
-            response_cnt += 1
-
-            # response
+        while (
+            len(set(node_history)) != len(self._graph.nodes) and
+            (len(node_history) - 1) < self.max_step and retry_cnt < (self.max_retry + 1)
+        ):
             self.dialog_logger.info(Q=prompt)
-            model_response = model(prompt).lower()
-            self.dialog_logger.info(A=model_response)
 
-            # analyse model response
-            try:
-                if "have visited all nodes" in model_response:
-                    break
+            reply = model(prompt)
+            self.dialog_logger.info(A=reply)
 
-                # update level
-                next_level = cur_level + 1
+            # start processing response in this iteration
+            next_node = self.extract_answer(reply, value_valid_nodes)
 
-                cur_coverage, cur_min_edit_distance, cur_level_nodes = self.single_step_metric(model_response, next_level, node_history, teacher_forcing=False)
+            # if `reply` is formatted, force the new reply
+            if not isinstance(next_node, FormatInvalid) \
+               and str(getattr(next_node, "output", next_node)) != reply:
+                assert self.format_tolerant
+                formatted = str(getattr(next_node, "output", next_node))
+                logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
+                model.force(formatted)
 
-                min_edit_distances.append(cur_min_edit_distance)
-                coverages.append(1 - cur_coverage)
-
-                prompt = self.generate_exploring_prompt(cur_level_nodes, node_history, mcq, provide_state)
-
-                # have traversed all nodes
-                if cur_coverage == 1.0:
-                    break
-
+            if not isinstance(next_node, Invalid):
+                prompt = self._get_prompt(next_node, node_history)
+                node_history.append(next_node)
                 retry_cnt = 0
-                cur_level = next_level
-            except Exception as e:
-                logger.error(e)
-                if retry_cnt == 0:
-                    prompt = "Invalid response. " \
-                             "Try again. Please do not include any reasoning in your response. " \
-                             + prompt
-                retry_cnt += 1
-        return coverages, min_edit_distances, node_history
 
-    def _test_tf(self, model, start_node, mcq, provide_state):
-        node_history = [start_node]
+                value_valid_nodes = value_valid_nodes.union(self._get_adj_nodes(next_node))
+                continue
+
+            if retry_cnt == 0:
+                # TODO: maybe add mcq here?
+                prompt = "Invalid reply. Try again. You can only reply with a " \
+                         "integer number."
+
+            retry_cnt += 1
+
+        self.dialog_logger.info(Q=prompt)
+
+        if isinstance(next_node, Invalid):
+            node_history.append(next_node)  # save the last invalid
+            logger.info("Max retry times reached, stop interaction now.")
+        elif len(set(node_history)) != len(self._graph.nodes):  # target not achieved
+            logger.info("Max steps reached, stop the interaction now.")
+
+        return node_history
+
+    def _test_tf(self, model):
+        node_history = [self._start_node]
         cur_level = 0
 
-        coverages = [1 - 1 / len(self.graph.nodes)]
+        coverages = [1 - 1 / len(self._graph.nodes)]
         min_edit_distances = []
 
-        optim_cov_sum = self.refresh_teacher_qa(start_node, mcq, provide_state)
+        optim_cov_sum = self.refresh_teacher_qa()
 
         # no retry when teacher forcing
-        for prompt, teacher_reply in self.teacher_qa_list:
+        for prompt, teacher_reply in self._teacher_qa_list:
             self.dialog_logger.info(Q=prompt)
             model_response = model(prompt)
             model.force(teacher_reply)
@@ -327,45 +308,29 @@ class BfsEvaluator():
 
     def refresh_teacher_qa(self, start_node, mcq, provide_state):
         self.reset_model(self.teacher, verbose=False)
-        self.teacher_qa_list = []
+        self._teacher_qa_list = []
 
         # prepare param
         cur_level = 0
         node_history = [start_node]
 
         # START
-        adjacent_nodes = [edge[1] for edge in self.graph.edges(start_node)]
+        adjacent_nodes = [edge[1] for edge in self._graph.edges(start_node)]
         prompt = f"START. " \
                  f'The start node is {start_node}. ' \
                  f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
 
         cov_sum = 0
-        while len(set(self.graph.nodes).difference(set(node_history))) != 0:  # while exist node not visited
+        while len(set(self._graph.nodes).difference(set(node_history))) != 0:  # while exist node not visited
             response = self.teacher(prompt)
-            self.teacher_qa_list.append((prompt, response))
+            self._teacher_qa_list.append((prompt, response))
             cur_level += 1
             cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
             node_history.extend(cur_level_nodes_ground_truth)
             prompt = self.generate_exploring_prompt(cur_level_nodes_ground_truth, set(node_history), mcq, provide_state)
-            cov_sum += len(set(node_history)) / len(self.graph.nodes)
+            cov_sum += len(set(node_history)) / len(self._graph.nodes)
 
         return cov_sum
-
-    def generate_exploring_prompt(self, cur_level_nodes, node_history, mcq, provide_state):
-        adjacent_nodes = list(
-            set([edge[1] for next_node in cur_level_nodes for edge in self.graph.edges(next_node)]))
-
-        prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
-
-        if provide_state:
-            no_visited_nodes = set(self.graph.nodes) - set(node_history)
-            if len(no_visited_nodes) == 0:
-                prompt += " You have visited all nodes of the graph."
-            else:
-                prompt += " You have not visited node {}.".format(
-                    ', '.join([str(i) for i in no_visited_nodes]))
-
-        return prompt
 
     def single_step_metric(self, model_response, cur_level, node_history, teacher_forcing):
         # extract next nodes from model response
@@ -387,5 +352,5 @@ class BfsEvaluator():
 
         node_history.extend(cur_level_nodes)
         # record metric coverage
-        cur_coverage = len(set(node_history)) / len(self.graph.nodes)
+        cur_coverage = len(set(node_history)) / len(self._graph.nodes)
         return cur_coverage, cur_min_edit_distance, cur_level_nodes
