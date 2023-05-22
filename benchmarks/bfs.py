@@ -84,54 +84,48 @@ class BFSEvaluator():
 
         model.reset(instruction)
 
-    def test_one_time(self, model, teacher_forcing=False, instruction=None):
+    def test_one_time(self, model, teacher_forcing, instruction=None):
         self.reset()
-        self.reset_model(model, instruction, self.explain_algo)
+        self.reset_model(model, instruction)
 
-        # generate graph and start node
-        self._graph = generate_graph(self.node_num)
-        logger.info('Generated random graph: nodes: {}, edges: {}'.format(self._graph.nodes, self._graph.edges))
+        self._graph = networkx.random_tree(self.node_num).to_undirected()
+        # self._start_node = random.randint(0, self.node_num-1)
         self._start_node = 0
 
+        logger.info("Generated random graph: nodes: {}, edges: {}"
+                    .format(self._graph.nodes, self._graph.edges))
+
         if teacher_forcing:
-            coverages, min_edit_distances, optim_cov_sum, model_node_history = self._test_tf(model)
+            model_node_history, teacher_node_history, optim_decov_sum = self._test_tf(model)
+            metric = self.calc_metric_tf(model_node_history, teacher_node_history)
         else:
-            coverages, min_edit_distances, model_node_history = self._test_no_tf(model)
+            model_node_history = self._test_no_tf(model)
+            metric = self.calc_metric_no_tf(model_node_history)
 
-        # calc final metric
-        cov_result = sum(coverages)
-        med_result = sum(min_edit_distances)
+        full_result = {}
+        full_result["metric"] = metric
+        full_result["output"] = dict(
+            node_history=model_node_history,
+            # inv_coverage_list=covs
+            teacher_node_history=teacher_node_history if teacher_forcing else None
+        )
+        full_result["env"] = dict(
+            optim_decov_sum=optim_decov_sum if teacher_forcing else None,
+            nodes=list(self._graph.nodes),
+            edges=list(self._graph.edges),
+            start_node=self._start_node,
+            teacher_forcing=teacher_forcing,
+            mcq=self.mcq,
+            explain_algo=self.explain_algo,
+            provide_state=self.provide_state,
+            instruction=self.default_insturction if instruction is None else instruction
+        )
+        full_result["history"] = dict(
+            model_history=model.history,
+            teacher_history=self._teacher_qa_list if teacher_forcing else None
+        )
 
-        logger.info(f"cov_result: {cov_result}")
-        logger.info(f"med_result: {med_result}")
-
-        full_result = {
-            "med_sum": med_result,
-            "inv_cov_sum": cov_result,
-            "inv_cov_min": coverages[-1],
-            "output": dict(
-                guess_list=model_node_history,
-                inv_coverage_list=coverages,
-                min_edit_distance_list=min_edit_distances
-            ),
-            "env": dict(
-                optim_cov_sum=optim_cov_sum if teacher_forcing else None,
-                nodes=list(self._graph.nodes),
-                edges=list(self._graph.edges),
-                start_node=self._start_node,
-                teacher_forcing=teacher_forcing,
-                mcq=self.mcq,
-                explain_algo=self.explain_algo,
-                provide_state=self.provide_state,
-                instruction=self.default_insturction if instruction is None else instruction
-            ),
-            "history": dict(
-                model_history=model.history,
-                teacher_history=self._teacher_qa_list if teacher_forcing else None
-            )
-        }
-
-        return cov_result, coverages[-1], med_result, full_result
+        return metric, full_result
 
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
@@ -224,10 +218,72 @@ class BFSEvaluator():
 
         return decov_sum
 
+    def calc_metric_no_tf(self, node_history):
+        # TODO: remove the starting node in all `node_history`
+        assert len(node_history) > 1
+
+        decov_list = [self.calc_decoverage(self._start_node, [])]
+        highest_cnt = 0
+        check_bfs_flag = True
+
+        queue_with_levels = [self._get_adj_nodes(node_history[0])]
+
+        def _check_bfs(next_node, node_history):
+            '''
+            Check whether `next_node` follows DFS
+            Will assume the previous steps in `node_history` already follow DFS
+
+            Return
+            - boolean: if selected interface follows dfs
+            '''
+            # node_history[-1] != next_node
+
+            while len(queue_with_levels):
+                curr_level = queue_with_levels[0]
+                curr_level = [node for node in curr_level if node not in node_history]
+                queue_with_levels[0] = curr_level
+
+                if len(curr_level):
+                    break
+
+                # current level is finished, proceed to the next level
+                queue_with_levels.pop(0)
+
+            if next_node not in queue_with_levels[0]:
+                return False
+
+            queue_with_levels.append(
+                [node for node in self._get_adj_nodes(next_node) if node not in node_history]
+            )
+            return True
+
+        for idx, node in enumerate(node_history[1:]):  # remove the starting node
+            if isinstance(node, Invalid):
+                assert idx == len(node_history[1:]) - 1, \
+                    f"Only the last node can be Invalid without teacher forcing. {node_history}"
+                break
+
+            # `check_bfs_flag` will remain `True` until `model` stops following bfs
+            if check_bfs_flag and _check_bfs(node, node_history[:idx + 1]):
+                highest_cnt = idx + 1
+            else:
+                check_bfs_flag = False
+
+            decov = self.calc_decoverage(node, node_history[:idx + 1])
+            assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
+            decov_list.append(decov)
+
+        acc = highest_cnt / len(node_history[1:])  # ignore the starting node
+        min_decov = decov_list[-1]
+        sum_decov = sum(decov_list)
+
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        return metrics
+
     def _test_no_tf(self, model):
         '''
         Return:
-        - accuracy: percentage of node selected following dfs
+        - accuracy: percentage of node selected following bfs
         - decov_list: list of (1 - coverages)
         - trace of node explored by model
         '''
@@ -308,26 +364,3 @@ class BFSEvaluator():
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
         return node_history, teacher_node_history, optim_decov_sum
-
-    def single_step_metric(self, model_response, cur_level, node_history, teacher_forcing):
-        # extract next nodes from model response
-        next_level_nodes = extract_next_level_nodes(model_response)
-        cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
-        if cur_level_nodes_ground_truth:
-            levels_ground_truth = [cur_level for _ in cur_level_nodes_ground_truth]
-        else:
-            levels_ground_truth = []
-
-        # record metric min_edit_distance
-        levels = [self.node_to_level.get(next_level_node) for next_level_node in next_level_nodes]
-        cur_min_edit_distance = get_min_edit_distance(levels, levels_ground_truth)
-
-        if teacher_forcing:
-            cur_level_nodes = cur_level_nodes_ground_truth
-        else:
-            cur_level_nodes = next_level_nodes
-
-        node_history.extend(cur_level_nodes)
-        # record metric coverage
-        cur_coverage = len(set(node_history)) / len(self._graph.nodes)
-        return cur_coverage, cur_min_edit_distance, cur_level_nodes
