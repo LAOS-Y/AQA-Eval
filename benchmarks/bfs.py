@@ -223,6 +223,35 @@ class BFSEvaluator():
         except ValueError:
             return FormatInvalid(next_node)
 
+    def calc_decoverage(self, next_node, node_history):
+        return 1 - len(set(node_history + [next_node])) / len(self._graph.nodes)
+
+    def refresh_teacher_qa(self):
+        self.reset_model(self.teacher, verbose=False)
+        self._teacher_qa_list = []
+
+        response = ""
+        prompt = self._get_prompt(self._start_node, [])
+        decov_sum = self.calc_decoverage(self._start_node, [])
+
+        next_node = self._start_node
+        node_history = [self._start_node]
+
+        # while exist node not visited
+        while len(set(self._graph.nodes).difference(set(node_history))) != 0:
+            response = self.teacher(prompt)
+            next_node = int(response)
+
+            self._teacher_qa_list.append((prompt, next_node))
+            prompt = self._get_prompt(next_node, node_history)
+
+            decov_sum += self.calc_decoverage(next_node, node_history)
+            node_history.append(next_node)
+
+        self._teacher_qa_list.append((prompt, None))
+
+        return decov_sum
+
     def _test_no_tf(self, model):
         '''
         Return:
@@ -283,54 +312,30 @@ class BFSEvaluator():
         return node_history
 
     def _test_tf(self, model):
+        curr_node = self._start_node
         node_history = [self._start_node]
-        cur_level = 0
+        teacher_node_history = [self._start_node]
 
-        coverages = [1 - 1 / len(self._graph.nodes)]
-        min_edit_distances = []
-
-        optim_cov_sum = self.refresh_teacher_qa()
+        optim_decov_sum = self.refresh_teacher_qa()
 
         # no retry when teacher forcing
-        for prompt, teacher_reply in self._teacher_qa_list:
+        for prompt, teacher_reply in self._teacher_qa_list[:-1]:
             self.dialog_logger.info(Q=prompt)
-            model_response = model(prompt)
-            model.force(teacher_reply)
-            self.dialog_logger.info(A=model_response, T=teacher_reply)
 
-            next_level = cur_level + 1
-            cur_coverage, cur_min_edit_distance, _ = self.single_step_metric(model_response, next_level, node_history, teacher_forcing=True)
-            min_edit_distances.append(cur_min_edit_distance)
-            coverages.append(1 - cur_coverage)
-            cur_level = next_level
+            reply = model(prompt)
 
-        return coverages, min_edit_distances, optim_cov_sum, node_history
+            model.force(str(teacher_reply))
+            self.dialog_logger.info(A=reply, T=teacher_reply)
 
-    def refresh_teacher_qa(self, start_node, mcq, provide_state):
-        self.reset_model(self.teacher, verbose=False)
-        self._teacher_qa_list = []
+            next_node = self.extract_answer(reply, self._get_adj_nodes(curr_node))
 
-        # prepare param
-        cur_level = 0
-        node_history = [start_node]
+            node_history.append(next_node)
+            teacher_node_history.append(teacher_reply)
+            curr_node = teacher_reply
 
-        # START
-        adjacent_nodes = [edge[1] for edge in self._graph.edges(start_node)]
-        prompt = f"START. " \
-                 f'The start node is {start_node}. ' \
-                 f"Adjacent nodes of node{start_node} are {adjacent_nodes}"
+        self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
-        cov_sum = 0
-        while len(set(self._graph.nodes).difference(set(node_history))) != 0:  # while exist node not visited
-            response = self.teacher(prompt)
-            self._teacher_qa_list.append((prompt, response))
-            cur_level += 1
-            cur_level_nodes_ground_truth = self.level_to_node.get(cur_level)
-            node_history.extend(cur_level_nodes_ground_truth)
-            prompt = self.generate_exploring_prompt(cur_level_nodes_ground_truth, set(node_history), mcq, provide_state)
-            cov_sum += len(set(node_history)) / len(self._graph.nodes)
-
-        return cov_sum
+        return node_history, teacher_node_history, optim_decov_sum
 
     def single_step_metric(self, model_response, cur_level, node_history, teacher_forcing):
         # extract next nodes from model response
