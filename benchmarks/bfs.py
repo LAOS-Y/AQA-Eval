@@ -1,20 +1,10 @@
-import random
+import networkx
 import re
 
-import networkx
-from networkx import is_connected
-from itertools import permutations
-from collections import deque
 from loguru import logger
 
 from models import BFSModel
 from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
-
-
-def generate_graph(node_num):
-    graph = networkx.random_tree(node_num).to_undirected()
-
-    return graph
 
 
 def extract_int(s):
@@ -61,15 +51,38 @@ class BFSEvaluator():
 
     @property
     def default_insturction(self):
-        return "You are required to visit all the nodes in a special unweighted undirected non-cyclic graph." \
-               "A unweighted undirected non-cyclic graph contains a series of nodes and edges, all of which have the same weight." \
-               "First I will tell you the start node, and a list named B that contains all the neighbouring nodes of the start node." \
-               "You can choose some nodes from B to traverse next, and then tell me nodes you choose in a set format." \
-               "For example, '{0, 1, 2}' means you choose node0, node1 and node2." \
-               "Please do not include any reasoning in your response, only response a pure set." \
-               "Every time you tell me a set, you will be given the neighbouring nodes of each node in the previous set." \
-               "The game will finish once you have visited all the nodes in the graph. \n" \
-               "Please traverse the entire graph in as few rounds as possible."
+        instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
+                      "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
+                      "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
+                      "You can only visit nodes that are adjacent to the already visited nodes. " \
+                      "You can only reply with a integer number indicating which node to be visited next. " \
+                      "Please traverse the entire graph in as few rounds as possible." \
+                      "You are currently on the node 0." \
+
+        if self.explain_algo:
+            instruction += "You should use breadth first search algorithm. " \
+                           "The algorithm works as follows:\n" \
+                           "1. Initialize a queue data structure and add the starting node to the queue.\n" \
+                           "2. While the queue is not empty, visit the first node and remove it from the queue.\n" \
+                           "3. For nodes adjacent to the removed vertex, add the unvisited ones to the queue.\n" \
+                           "4. Repeat steps 2-3 until the queue is empty." \
+                        #    "The algorithm is called 'breadth-first' because it explores all the vertices at the current level before moving on to the next level. " \
+                        #    "In other words, it explores the graph in a level-by-level manner, from the starting vertex to the farthest vertex.\n"
+                    #   "The algorithm starts from a given vertex, and explores all its adjacent vertices at the current level before moving on to the next level. " \
+                    #   "The main idea behind BFS is to explore all the nodes at a given level before moving on to the next level.\n" \
+
+        return instruction
+
+    def reset_model(self, model, instruction=None, verbose=True):
+        # clear dialog history and give instruction
+        # will use `self.default_insturction` if `instruction` is None
+        if instruction is None:
+            instruction = self.default_insturction
+
+        if verbose:
+            self.dialog_logger.info(System=instruction)
+
+        model.reset(instruction)
 
     def test_one_time(self, model, teacher_forcing=False, instruction=None):
         self.reset()
@@ -120,31 +133,6 @@ class BFSEvaluator():
 
         return cov_result, coverages[-1], med_result, full_result
 
-    def reset_model(self, model, instruction=None, explain_algo=False, verbose=True):
-        # clear dialog history and give instruction
-        # will use `self.default_insturction` if `instruction` is None
-        if instruction is None:
-            instruction = self.default_insturction
-
-        if explain_algo:
-            instruction += "Please use the BFS algorithm traverse this graph.\n" \
-                      "BFS stands for Breadth First Search. " \
-                      "It is a popular algorithm used to traverse a graph or a tree data structure. " \
-                      "The algorithm starts from a given vertex, and explores all its adjacent vertices at the current level before moving on to the next level. " \
-                      "The main idea behind BFS is to explore all the nodes at a given level before moving on to the next level.\n" \
-                      "The algorithm works as follows:\n" \
-                      "1. Initialize a queue data structure and add the starting vertex to the queue.\n" \
-                      "2. While the queue is not empty, remove the first vertex from the queue and mark it as visited.\n" \
-                      "3. For each of the unvisited adjacent vertices of the removed vertex, add them to the queue.\n" \
-                      "4. Repeat steps 2-3 until the queue is empty.\n" \
-                      "The algorithm is called 'breadth-first' because it explores all the vertices at the current level before moving on to the next level. " \
-                      "In other words, it explores the graph in a level-by-level manner, from the starting vertex to the farthest vertex.\n"
-        if verbose:
-            self.dialog_logger.info(System=instruction)
-
-        model.reset(instruction)
-        return
-
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
@@ -181,22 +169,6 @@ class BFSEvaluator():
             valid_nodes = {str(node) for node in valid_nodes}
 
             prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
-
-        return prompt
-
-    def generate_exploring_prompt(self, cur_level_nodes, node_history, mcq, provide_state):
-        adjacent_nodes = list(
-            set([edge[1] for next_node in cur_level_nodes for edge in self._graph.edges(next_node)]))
-
-        prompt = f"Adjacent nodes of nodes{cur_level_nodes} are {adjacent_nodes}."
-
-        if provide_state:
-            no_visited_nodes = set(self._graph.nodes) - set(node_history)
-            if len(no_visited_nodes) == 0:
-                prompt += " You have visited all nodes of the graph."
-            else:
-                prompt += " You have not visited node {}.".format(
-                    ', '.join([str(i) for i in no_visited_nodes]))
 
         return prompt
 
