@@ -1,3 +1,3 @@
-# AlgoReasoningBench
+# AQA-Eval
 
 coming soon
