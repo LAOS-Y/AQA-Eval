@@ -1,3 +1,3 @@
-# IQAMark
+# AlgoReasoningBench
 
 coming soon
