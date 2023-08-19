@@ -56,7 +56,7 @@ class BinarySearchEvaluator(Benchmark):
         except ValueError:
             return FormatInvalid(guess)
 
-    def calc_err(self, guess, target):
+    def _calc_err(self, guess, target):
         # calculate the error between a single guess and target
         if isinstance(guess, Invalid):
             return 1
@@ -75,7 +75,7 @@ class BinarySearchEvaluator(Benchmark):
             }
 
         err_list = [
-            self.calc_err(i, j) for i, j in zip(answer_list, target_list)
+            self._calc_err(i, j) for i, j in zip(answer_list, target_list)
         ]
 
         metrics = {
@@ -86,6 +86,11 @@ class BinarySearchEvaluator(Benchmark):
         return metrics
 
     def calc_metric_no_tf(self, answer_list, target_list):
+        # Since we are interested in how close the model gets to the target number before
+        # it quits, the final invalid guess is removed when calculating metrics
+        if isinstance(answer_list[-1], Invalid):
+            answer_list = answer_list[:-1]
+
         return self.calc_metric_tf(answer_list, target_list)
 
     def refresh_teacher_qa(self):
@@ -186,40 +191,38 @@ class BinarySearchEvaluator(Benchmark):
         logger.info("Picked Random Number: {}".format(self._target))
 
         if teacher_forcing:
-            guess_list, teacher_guess_list = self._test_tf(model)
-            metric = self.calc_metric_tf(guess_list, teacher_guess_list)
+            answer_list, teacher_answer_list = self._test_tf(model)
+            metric = self.calc_metric_tf(answer_list, teacher_answer_list)
         else:
-            guess_list = self._test_no_tf(model)
-            # Since we are interested in how close the model gets to the target number before
-            # it quits, the final invalid guess is removed when calculating metrics
-            if isinstance(guess_list[-1], Invalid):
-                guess_list = guess_list[:-1]
+            answer_list = self._test_no_tf(model)
+            teacher_answer_list = []
 
-            target_list = [self._target] * len(guess_list)
-            metric = self.calc_metric_no_tf(guess_list, target_list)
+            target_list = [self._target] * len(answer_list)
+            metric = self.calc_metric_no_tf(answer_list, target_list)
 
-        full_result = {}
-        full_result["metric"] = metric
-        full_result["output"] = dict(
-            guess_list=guess_list,
-            teacher_guess_list=teacher_guess_list if teacher_forcing else None
-        )
-        full_result["env"] = dict(
-            min=self.min,
-            max=self.max,
-            target=self._target,
-            teacher_forcing=teacher_forcing,
-            instruction=self.default_insturction if instruction is None else instruction
-        )
-        full_result["history"] = dict(
-            model_history=model.history,
-            teacher_history=self._teacher_qa_list if teacher_forcing else None
+        result = self._get_result(
+            metric, answer_list, teacher_answer_list,
+            model.history, teacher_forcing, instruction
         )
 
-        return metric, full_result
+        return metric, result
 
-    def pack_multi_time_result(self, metrics, single_results, teacher_forcing_mode):
-        metric, full_result = super(BinarySearchEvaluator, self).pack_multi_time_result(
+    def _get_result(
+        self, metric, answer_list, teacher_answer_list,
+        model_history, teacher_forcing, instruction=None
+    ):
+        result = super(BinarySearchEvaluator, self)._get_result(
+            metric, answer_list, teacher_answer_list, model_history, teacher_forcing, instruction
+        )
+
+        result["env"]["min"] = self.min
+        result["env"]["max"] = self.max
+        result["env"]["target"] = self._target
+
+        return result
+
+    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+        metric, full_result = super(BinarySearchEvaluator, self)._pack_results(
             metrics, single_results, teacher_forcing_mode
         )
 

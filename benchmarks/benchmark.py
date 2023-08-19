@@ -16,7 +16,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
     def reset(self):
         self.teacher.reset()
-        self._teacher_qa_list = None
+        self._teacher_qa_list = []
         self._target = None
 
     def reset_model(self, model, instruction=None, verbose=True):
@@ -35,7 +35,36 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.reset_model(self.teacher, verbose=False)
         self._teacher_qa_list = []
 
-    def pack_multi_time_result(self, metrics, single_results, teacher_forcing_mode):
+    def _get_result(
+        self, metric, answer_list, teacher_answer_list,
+        model_history, teacher_forcing, instruction=None
+    ):
+        assert teacher_forcing or len(teacher_answer_list) == 0, \
+            "`teacher_answer_list` must be empty when teacher forcing is disabled.\n" \
+            f"teacher_answer_list={teacher_answer_list}"
+
+        assert teacher_forcing or len(self._teacher_qa_list) == 0, \
+            "`self._teacher_qa_list` must be empty when teacher forcing is disabled.\n" \
+            f"self._teacher_qa_list={self._teacher_qa_list}"
+
+        result = {}
+        result["metric"] = metric
+        result["output"] = dict(
+            answer_list=answer_list,
+            teacher_answer_list=teacher_answer_list
+        )
+        result["env"] = dict(
+            teacher_forcing=teacher_forcing,
+            instruction=self.default_insturction if instruction is None else instruction
+        )
+        result["history"] = dict(
+            model_history=model_history,
+            teacher_history=self._teacher_qa_list
+        )
+
+        return result
+
+    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
         # summarize the metrics from each test run and pack the detailed results
         metric = dict_mean(metrics)
 
@@ -64,7 +93,7 @@ class Benchmark(metaclass=abc.ABCMeta):
             metrics.append(metric)
             single_results.append(single_result)
 
-        return self.pack_multi_time_result(metrics, single_results, teacher_forcing_mode)
+        return self._pack_results(metrics, single_results, teacher_forcing_mode)
 
     def _context_kept_test(self, model, times, teacher_forcing_mode):
         # model's history will be cleared before each run
@@ -104,7 +133,7 @@ class Benchmark(metaclass=abc.ABCMeta):
             example_ctx = f"Example #{i + 1}: \n" + model.rebuild_context(self._teacher_qa_list)
             instruction_w_examples += example_ctx
 
-        return self.pack_multi_time_result(metrics, single_results, teacher_forcing_mode)
+        return self._pack_results(metrics, single_results, teacher_forcing_mode)
 
     def test_multi_time(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:
