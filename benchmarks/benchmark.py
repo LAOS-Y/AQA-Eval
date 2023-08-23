@@ -9,7 +9,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
-        self.max_step = max_step if max_step is not None else self.max - self.min + 1
+        self.max_step = max_step
 
         self.teacher = None
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])

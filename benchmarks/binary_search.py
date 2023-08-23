@@ -116,7 +116,10 @@ class BinarySearchEvaluator(Benchmark):
         retry_cnt = 0
 
         while (
-            answer != self._target and len(answer_list) < self.max_step
+            answer != self._target
+            # stop when reaching `self.max_step`
+            and (self.max_step is None or len(answer_list) < self.max_step)
+            # stop when reaching `self.max_retry`
             and retry_cnt < (self.max_retry + 1)
         ):
             self.dialog_logger.info(Q=prompt)
