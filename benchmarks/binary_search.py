@@ -16,6 +16,10 @@ class BinarySearchEvaluator(Benchmark):
         self.max = max
         self.teacher = BSModel(min, max)
 
+    def reset(self):
+        super(BinarySearchEvaluator, self).reset()
+        self._target = None
+
     @property
     def default_insturction(self):
         return "You are required to guess the random number which I have just picked between {} and {}. " \

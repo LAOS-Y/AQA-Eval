@@ -17,7 +17,6 @@ class Benchmark(metaclass=abc.ABCMeta):
     def reset(self):
         self.teacher.reset()
         self._teacher_qa_list = []
-        self._target = None
 
     def reset_model(self, model, instruction=None, verbose=True):
         # clear dialog history and give instruction
