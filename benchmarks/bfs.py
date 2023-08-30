@@ -8,6 +8,7 @@ from models import BFSModel
 from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
+# TODO: refine or just remove mcq and provide_state
 class BFSEvaluator():
     def __init__(
         self, node_num=4, explain_algo=True, mcq=True, provide_state=True,
