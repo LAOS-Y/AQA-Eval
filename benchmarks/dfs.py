@@ -174,29 +174,30 @@ class DFSEvaluator():
 
     def calc_metric_no_tf(self, node_history):
         # TODO: remove the starting node in all `node_history`
-        assert len(node_history) > 1
+        assert len(node_history) > 0
+        assert node_history[0] != self._start_node
 
         decov_list = [self.calc_decoverage([self._start_node])]
         highest_cnt = 0
         check_dfs_flag = True
 
-        for idx, node in enumerate(node_history[1:]):  # remove the starting node
+        for idx, node in enumerate(node_history):  # remove the starting node
             if isinstance(node, Invalid):
-                assert idx == len(node_history[1:]) - 1, \
+                assert idx == len(node_history) - 1, \
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
                 break
 
             # `check_dfs_flag` will remain `True` until `model` stops following dfs
-            if check_dfs_flag and self._check_dfs(node, node_history[:idx + 1]):
+            if check_dfs_flag and self._check_dfs(node, [self._start_node] + node_history[:idx]):
                 highest_cnt = idx + 1
             else:
                 check_dfs_flag = False
 
-            decov = self.calc_decoverage(node_history[:idx + 1] + [node])
+            decov = self.calc_decoverage([self._start_node] + node_history[:idx + 1])
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = highest_cnt / len(node_history[1:])  # ignore the starting node  # dont ignore last invalid
+        acc = highest_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
@@ -204,28 +205,31 @@ class DFSEvaluator():
         return metrics
 
     def calc_metric_tf(self, node_history, teacher_node_history):
-        assert len(node_history) > 1
+        assert len(node_history) > 0
+        assert node_history[0] != self._start_node
 
         decov_list = [self.calc_decoverage([self._start_node])]
         dfs_cnt = 0
 
-        for idx, node in enumerate(node_history[1:]):
+        for idx, (node, teacher_node) in enumerate(
+            zip(node_history, teacher_node_history)
+        ):
             if isinstance(node, Invalid):
                 decov_list.append(decov_list[-1])
                 continue
 
-            if self._check_dfs(node, teacher_node_history[:idx + 1]):
+            if self._check_dfs(node, [self._start_node] + teacher_node_history[:idx]):
                 dfs_cnt += 1
 
-            decov = self.calc_decoverage(teacher_node_history[:idx + 1] + [node])
+            decov = self.calc_decoverage([self._start_node] + teacher_node_history[:idx] + [node])
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = dfs_cnt / len(node_history[1:])  # ignore the starting node
+        acc = dfs_cnt / len(node_history)  # ignore the starting node
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
-        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list}
         return metrics
 
     def _test_no_tf(self, model):
@@ -236,15 +240,15 @@ class DFSEvaluator():
         - trace of node explored by model
         '''
         prompt = self._get_prompt(self._start_node, [])
-        node_history = [self._start_node]
+        node_history = []
 
         retry_cnt = 0
 
-        value_valid_nodes = set(self._get_adj_nodes(self._start_node))
+        valid_nodes = set(self._get_adj_nodes(self._start_node))
 
         while (
-            len(set(node_history)) != len(self._graph.nodes) and
-            (len(node_history) - 1) < self.max_step and retry_cnt < (self.max_retry + 1)
+            len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
+            (len(node_history)) < self.max_step and retry_cnt < (self.max_retry + 1)
         ):
             self.dialog_logger.info(Q=prompt)
 
@@ -252,7 +256,7 @@ class DFSEvaluator():
             self.dialog_logger.info(A=reply)
 
             # start processing response in this iteration
-            next_node = self.extract_answer(reply, value_valid_nodes)
+            next_node = self.extract_answer(reply, valid_nodes)
 
             # if `reply` is formatted, force the new reply
             if not isinstance(next_node, FormatInvalid) \
@@ -263,11 +267,11 @@ class DFSEvaluator():
                 model.force(formatted)
 
             if not isinstance(next_node, Invalid):
-                prompt = self._get_prompt(next_node, node_history)
+                prompt = self._get_prompt(next_node, [self._start_node] + node_history)
                 node_history.append(next_node)
                 retry_cnt = 0
 
-                value_valid_nodes = set(self._get_adj_nodes(next_node))
+                valid_nodes = set(self._get_adj_nodes(next_node))
                 continue
 
             if retry_cnt == 0:
@@ -282,15 +286,15 @@ class DFSEvaluator():
         if isinstance(next_node, Invalid):
             node_history.append(next_node)  # save the last invalid
             logger.info("Max retry times reached, stop interaction now.")
-        elif len(set(node_history)) != len(self._graph.nodes):  # target not achieved
+        elif len(set([self._start_node] + node_history)) != len(self._graph.nodes):  # target not achieved
             logger.info("Max steps reached, stop the interaction now.")
 
         return node_history
 
     def _test_tf(self, model):
-        value_valid_nodes = self._get_adj_nodes(self._start_node)
-        node_history = [self._start_node]
-        teacher_node_history = [self._start_node]
+        valid_nodes = self._get_adj_nodes(self._start_node)
+        node_history = []
+        teacher_node_history = []
 
         optim_decov_sum = self.refresh_teacher_qa()
 
@@ -303,11 +307,11 @@ class DFSEvaluator():
             model.force(str(teacher_reply))
             self.dialog_logger.info(A=reply, T=teacher_reply)
 
-            next_node = self.extract_answer(reply, value_valid_nodes)
+            next_node = self.extract_answer(reply, valid_nodes)
 
             node_history.append(next_node)
             teacher_node_history.append(teacher_reply)
-            value_valid_nodes = self._get_adj_nodes(teacher_reply)
+            valid_nodes = self._get_adj_nodes(teacher_reply)
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
