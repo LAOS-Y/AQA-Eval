@@ -25,16 +25,9 @@ class BFSEvaluator():
         self.teacher = BFSModel()
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
 
-        # self.all_path = []`
-        # self.level_to_node = {}
-        # self.node_to_level = {}`
-
     def reset(self):
         self._teacher_qa_list = []
         self.teacher.reset("")
-        # self.all_path = []
-        # self.level_to_node = {}
-        # self.node_to_level = {}
 
     @property
     def default_insturction(self):
@@ -99,7 +92,6 @@ class BFSEvaluator():
                     start=[]
                 )
             )
-
             valid_nodes = {str(node) for node in valid_nodes}
 
             prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
@@ -107,6 +99,8 @@ class BFSEvaluator():
         return prompt
 
     def extract_answer(self, reply, valid_nodes):
+        assert self._start_node in valid_nodes
+
         # parse reply from model and return the formated answer
         # return an `Invalid` if failed to do so
         if self.format_tolerant:
@@ -149,7 +143,7 @@ class BFSEvaluator():
 
         return old_queue, new_queue
 
-    def _check_bfs(self, next_node, old_new_queues):
+    def _check_bfs(self, next_node, old_new_queues, visited_nodes):
         '''
         Check whether `next_node` follows BFS
         Will assume the previous steps in `node_history` already follow BFS
@@ -215,7 +209,9 @@ class BFSEvaluator():
 
             # `check_bfs_flag` will remain `True` until `model` stops following bfs
             if check_bfs_flag:
-                check_bfs_flag = self._check_bfs(node, old_new_queues)
+                check_bfs_flag = self._check_bfs(
+                    node, old_new_queues, [self._start_node] + node_history[:idx]
+                )
             if check_bfs_flag:
                 highest_cnt = idx + 1
                 old_new_queues = self._update_queues(
@@ -226,11 +222,11 @@ class BFSEvaluator():
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = highest_cnt / len(node_history)
+        acc = highest_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
-        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list}
         return metrics
 
     def calc_metric_tf(self, node_history, teacher_node_history):
@@ -249,7 +245,9 @@ class BFSEvaluator():
                 decov_list.append(decov_list[-1])
                 continue
 
-            check_bfs_flag = self._check_bfs(node, old_new_queues)
+            check_bfs_flag = self._check_bfs(
+                node, old_new_queues, [self._start_node] + teacher_node_history[:idx]
+            )
 
             if check_bfs_flag:
                 bfs_cnt += 1
@@ -262,11 +260,11 @@ class BFSEvaluator():
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = bfs_cnt / len(node_history)
+        acc = bfs_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
-        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov}
+        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list}
         return metrics
 
     def _test_no_tf(self, model):
@@ -281,7 +279,7 @@ class BFSEvaluator():
 
         retry_cnt = 0
 
-        valid_nodes = set(self._get_adj_nodes(self._start_node))
+        valid_nodes = set([self._start_node] + self._get_adj_nodes(self._start_node))
 
         while (
             len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
@@ -329,7 +327,7 @@ class BFSEvaluator():
         return node_history
 
     def _test_tf(self, model):
-        value_valid_nodes = set(self._get_adj_nodes(self._start_node))
+        valid_nodes = set([self._start_node] + self._get_adj_nodes(self._start_node))
         node_history = []
         teacher_node_history = []
 
@@ -344,11 +342,11 @@ class BFSEvaluator():
             model.force(str(teacher_reply))
             self.dialog_logger.info(A=reply, T=teacher_reply)
 
-            next_node = self.extract_answer(reply, value_valid_nodes)
+            next_node = self.extract_answer(reply, valid_nodes)
 
             node_history.append(next_node)
             teacher_node_history.append(teacher_reply)
-            value_valid_nodes = value_valid_nodes.union(self._get_adj_nodes(teacher_reply))
+            valid_nodes = valid_nodes.union(self._get_adj_nodes(teacher_reply))
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 

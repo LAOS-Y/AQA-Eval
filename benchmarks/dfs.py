@@ -83,7 +83,9 @@ class DFSEvaluator():
                 prompt += " You have not visited node {}." \
                           .format(", ".join([str(i) for i in unvisited_adj_nodes]))
         if self.mcq:
-            prompt += " Choose the next node to visit: {}.".format(", ".join(adj_nodes))
+            valid_nodes = adj_nodes
+
+            prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
 
         return prompt
 
@@ -251,7 +253,7 @@ class DFSEvaluator():
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = dfs_cnt / len(node_history)  # ignore the starting node
+        acc = dfs_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
