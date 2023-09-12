@@ -1,3 +1,4 @@
+from copy import deepcopy
 import networkx
 import re
 
@@ -26,9 +27,6 @@ class DFSEvaluator():
     def reset(self):
         self._teacher_qa_list = []
         self.teacher.reset("")
-        # self._teacher_qa_list = None
-        # self._graph = None
-        # self._start_node = None
 
     @property
     def default_insturction(self):
@@ -112,7 +110,18 @@ class DFSEvaluator():
         except ValueError:
             return FormatInvalid(next_node)
 
-    def _check_dfs(self, next_node, node_history):
+    def _update_stack(self, next_node, stack, visited_nodes):
+        # doesn't change `stack` in-place
+        assert isinstance(stack, list) and len(stack), stack
+        stack = deepcopy(stack)
+        # backtrace
+        if len(stack) > 1 and next_node == stack[-2]:
+            return stack[:-1]
+
+        stack.append(next_node)
+        return stack
+
+    def _check_dfs(self, next_node, stack, visited_nodes):
         '''
         Check whether `next_node` follows DFS
         Will assume the previous steps in `node_history` already follow DFS
@@ -120,13 +129,12 @@ class DFSEvaluator():
         Return
         - boolean: if selected interface follows dfs
         '''
-        # curr_node != next_node
-        curr_node = node_history[-1]
+        curr_node = stack[-1]
         adj_nodes = self._get_adj_nodes(curr_node)
 
         # check if model selected node following dfs path
         # i.e. select unvisited child node or parent node
-        unvisited_adj_nodes = set(adj_nodes).difference(set(node_history))
+        unvisited_adj_nodes = set(adj_nodes).difference(set(visited_nodes))
         if len(unvisited_adj_nodes):
             # should visit child node
             return next_node in unvisited_adj_nodes
@@ -134,11 +142,10 @@ class DFSEvaluator():
         # if all child have been fisited,
         # check if model is visiting its parent node in the history stack
 
-        curr_node_idx = node_history.index(curr_node)
         # `curr_node` should be the root only when there are children of the root unvisited
-        assert curr_node_idx
+        assert curr_node != self._start_node
         # should visit father node
-        if_dfs = (next_node == node_history[curr_node_idx - 1])
+        if_dfs = (next_node == stack[-2])
 
         return if_dfs
 
@@ -170,10 +177,12 @@ class DFSEvaluator():
 
         self._teacher_qa_list.append((prompt, None))
 
+        # remove start node in node_history
+        node_history = node_history[1:]
+
         return decov_sum
 
     def calc_metric_no_tf(self, node_history):
-        # TODO: remove the starting node in all `node_history`
         assert len(node_history) > 0
         assert node_history[0] != self._start_node
 
@@ -181,17 +190,24 @@ class DFSEvaluator():
         highest_cnt = 0
         check_dfs_flag = True
 
+        stack = [self._start_node]
+
         for idx, node in enumerate(node_history):  # remove the starting node
             if isinstance(node, Invalid):
                 assert idx == len(node_history) - 1, \
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
                 break
 
-            # `check_dfs_flag` will remain `True` until `model` stops following dfs
-            if check_dfs_flag and self._check_dfs(node, [self._start_node] + node_history[:idx]):
+            # `check_dfs_flag` will remain `True` until `model` stops following bfs
+            if check_dfs_flag:
+                check_dfs_flag = self._check_dfs(
+                    node, stack, [self._start_node] + node_history[:idx]
+                )
+            if check_dfs_flag:
                 highest_cnt = idx + 1
-            else:
-                check_dfs_flag = False
+                stack = self._update_stack(
+                    node, stack, [self._start_node] + node_history[:idx]
+                )
 
             decov = self.calc_decoverage([self._start_node] + node_history[:idx + 1])
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
@@ -211,6 +227,8 @@ class DFSEvaluator():
         decov_list = [self.calc_decoverage([self._start_node])]
         dfs_cnt = 0
 
+        stack = [self._start_node]
+
         for idx, (node, teacher_node) in enumerate(
             zip(node_history, teacher_node_history)
         ):
@@ -218,8 +236,16 @@ class DFSEvaluator():
                 decov_list.append(decov_list[-1])
                 continue
 
-            if self._check_dfs(node, [self._start_node] + teacher_node_history[:idx]):
+            check_dfs_flag = self._check_dfs(
+                node, stack, [self._start_node] + teacher_node_history[:idx]
+            )
+
+            if check_dfs_flag:
                 dfs_cnt += 1
+
+            stack = self._update_stack(
+                teacher_node, stack, [self._start_node] + teacher_node_history[:idx]
+            )
 
             decov = self.calc_decoverage([self._start_node] + teacher_node_history[:idx] + [node])
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
