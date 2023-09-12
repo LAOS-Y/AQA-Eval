@@ -60,6 +60,9 @@ class DFSEvaluator():
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
+    def _get_valid_nodes(self, next_node, visited_nodes):
+        return set(self._get_adj_nodes(next_node))
+
     def _get_prompt(self, next_node, visited_nodes):
         '''
         Generate prompt used in exploration step
@@ -83,7 +86,7 @@ class DFSEvaluator():
                 prompt += " You have not visited node {}." \
                           .format(", ".join([str(i) for i in unvisited_adj_nodes]))
         if self.mcq:
-            valid_nodes = adj_nodes
+            valid_nodes = self._get_valid_nodes(next_node, visited_nodes)
 
             prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
 
@@ -112,6 +115,9 @@ class DFSEvaluator():
         except ValueError:
             return FormatInvalid(next_node)
 
+    def _init_stack(self):
+        return [self._start_node]
+
     def _update_stack(self, next_node, stack, visited_nodes):
         # doesn't change `stack` in-place
         assert isinstance(stack, list) and len(stack), stack
@@ -131,6 +137,9 @@ class DFSEvaluator():
         Return
         - boolean: if selected interface follows dfs
         '''
+        if isinstance(next_node, Invalid):
+            return False
+
         curr_node = stack[-1]
         adj_nodes = self._get_adj_nodes(curr_node)
 
@@ -150,6 +159,10 @@ class DFSEvaluator():
         if_dfs = (next_node == stack[-2])
 
         return if_dfs
+
+    _init_stack_or_queue = _init_stack
+    _update_stack_or_queue = _update_stack
+    _check_algo = _check_dfs
 
     def calc_decoverage(self, visited_nodes):
         assert self._start_node in visited_nodes
@@ -190,9 +203,9 @@ class DFSEvaluator():
 
         decov_list = [self.calc_decoverage([self._start_node])]
         highest_cnt = 0
-        check_dfs_flag = True
+        check_algo_flag = True
 
-        stack = [self._start_node]
+        stack_or_queue = self._init_stack_or_queue()
 
         for idx, node in enumerate(node_history):  # remove the starting node
             if isinstance(node, Invalid):
@@ -200,15 +213,15 @@ class DFSEvaluator():
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
                 break
 
-            # `check_dfs_flag` will remain `True` until `model` stops following bfs
-            if check_dfs_flag:
-                check_dfs_flag = self._check_dfs(
-                    node, stack, [self._start_node] + node_history[:idx]
+            # `check_algo_flag` will remain `True` until `model` stops following bfs
+            if check_algo_flag:
+                check_algo_flag = self._check_algo(
+                    node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
-            if check_dfs_flag:
+            if check_algo_flag:
                 highest_cnt = idx + 1
-                stack = self._update_stack(
-                    node, stack, [self._start_node] + node_history[:idx]
+                stack_or_queue = self._update_stack_or_queue(
+                    node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
 
             decov = self.calc_decoverage([self._start_node] + node_history[:idx + 1])
@@ -227,33 +240,34 @@ class DFSEvaluator():
         assert node_history[0] != self._start_node
 
         decov_list = [self.calc_decoverage([self._start_node])]
-        dfs_cnt = 0
+        cnt = 0
 
-        stack = [self._start_node]
+        stack_or_queue = self._init_stack_or_queue()
 
         for idx, (node, teacher_node) in enumerate(
             zip(node_history, teacher_node_history)
         ):
+            check_algo_flag = self._check_algo(
+                node, stack_or_queue, [self._start_node] + teacher_node_history[:idx]
+            )
+
+            if check_algo_flag:
+                cnt += 1
+
+            stack_or_queue = self._update_stack_or_queue(
+                teacher_node, stack_or_queue, [self._start_node] + teacher_node_history[:idx]
+            )
+
             if isinstance(node, Invalid):
-                decov_list.append(decov_list[-1])
-                continue
-
-            check_dfs_flag = self._check_dfs(
-                node, stack, [self._start_node] + teacher_node_history[:idx]
-            )
-
-            if check_dfs_flag:
-                dfs_cnt += 1
-
-            stack = self._update_stack(
-                teacher_node, stack, [self._start_node] + teacher_node_history[:idx]
-            )
-
-            decov = self.calc_decoverage([self._start_node] + teacher_node_history[:idx] + [node])
+                decov = decov_list[-1]
+            else:
+                decov = self.calc_decoverage(
+                    [self._start_node] + teacher_node_history[:idx] + [node]
+                )
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = dfs_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
+        acc = cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
@@ -272,7 +286,7 @@ class DFSEvaluator():
 
         retry_cnt = 0
 
-        valid_nodes = set(self._get_adj_nodes(self._start_node))
+        valid_nodes = self._get_valid_nodes(self._start_node, [])
 
         while (
             len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
@@ -295,11 +309,11 @@ class DFSEvaluator():
                 model.force(formatted)
 
             if not isinstance(next_node, Invalid):
+                valid_nodes = self._get_valid_nodes(next_node, [self._start_node] + node_history)
                 prompt = self._get_prompt(next_node, [self._start_node] + node_history)
                 node_history.append(next_node)
                 retry_cnt = 0
 
-                valid_nodes = set(self._get_adj_nodes(next_node))
                 continue
 
             if retry_cnt == 0:
@@ -320,7 +334,7 @@ class DFSEvaluator():
         return node_history
 
     def _test_tf(self, model):
-        valid_nodes = self._get_adj_nodes(self._start_node)
+        valid_nodes = self._get_valid_nodes(self._start_node, [])
         node_history = []
         teacher_node_history = []
 
@@ -339,7 +353,7 @@ class DFSEvaluator():
 
             node_history.append(next_node)
             teacher_node_history.append(teacher_reply)
-            valid_nodes = self._get_adj_nodes(teacher_reply)
+            valid_nodes = self._get_valid_nodes(teacher_reply, [self._start_node] + teacher_node_history)
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 

@@ -63,6 +63,17 @@ class BFSEvaluator():
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
+    def _get_valid_nodes(self, next_node, visited_nodes):
+        valid_nodes = set(
+            sum(
+                [(self._get_adj_nodes(node) + [node]) for node in visited_nodes + [next_node]],
+                start=[]
+            )
+        )
+        assert self._start_node in valid_nodes
+
+        return valid_nodes
+
     def _get_prompt(self, next_node, visited_nodes):
         '''
         Generate prompt used in exploration step
@@ -86,21 +97,13 @@ class BFSEvaluator():
                 prompt += " You have not visited node {}." \
                           .format(", ".join([str(i) for i in unvisited_adj_nodes]))
         if self.mcq:
-            valid_nodes = set(
-                sum(
-                    [(self._get_adj_nodes(node) + [node]) for node in visited_nodes + [next_node]],
-                    start=[]
-                )
-            )
-            valid_nodes = {str(node) for node in valid_nodes}
+            valid_nodes = self._get_valid_nodes(next_node, visited_nodes)
 
             prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
 
         return prompt
 
     def extract_answer(self, reply, valid_nodes):
-        assert self._start_node in valid_nodes
-
         # parse reply from model and return the formated answer
         # return an `Invalid` if failed to do so
         if self.format_tolerant:
@@ -122,6 +125,9 @@ class BFSEvaluator():
             return next_node
         except ValueError:
             return FormatInvalid(next_node)
+
+    def _init_queues(self):
+        return self._get_adj_nodes(self._start_node), []
 
     def _update_queues(self, next_node, old_new_queues, visited_nodes):
         # doesn't change queues in-place
@@ -153,10 +159,18 @@ class BFSEvaluator():
         '''
 
         assert isinstance(old_new_queues, tuple) and len(old_new_queues) == 2, old_new_queues
+
+        if isinstance(next_node, Invalid):
+            return False
+
         old_queue, _ = old_new_queues
         assert old_queue, old_queue
 
         return next_node in old_queue
+
+    _init_stack_or_queue = _init_queues
+    _update_stack_or_queue = _update_queues
+    _check_algo = _check_bfs
 
     def calc_decoverage(self, visited_nodes):
         assert self._start_node in visited_nodes
@@ -197,9 +211,9 @@ class BFSEvaluator():
 
         decov_list = [self.calc_decoverage([self._start_node])]
         highest_cnt = 0
-        check_bfs_flag = True
+        check_algo_flag = True
 
-        old_new_queues = self._get_adj_nodes(self._start_node), []
+        stack_or_queue = self._init_stack_or_queue()
 
         for idx, node in enumerate(node_history):  # remove the starting node
             if isinstance(node, Invalid):
@@ -207,15 +221,15 @@ class BFSEvaluator():
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
                 break
 
-            # `check_bfs_flag` will remain `True` until `model` stops following bfs
-            if check_bfs_flag:
-                check_bfs_flag = self._check_bfs(
-                    node, old_new_queues, [self._start_node] + node_history[:idx]
+            # `check_algo_flag` will remain `True` until `model` stops following bfs
+            if check_algo_flag:
+                check_algo_flag = self._check_algo(
+                    node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
-            if check_bfs_flag:
+            if check_algo_flag:
                 highest_cnt = idx + 1
-                old_new_queues = self._update_queues(
-                    node, old_new_queues, [self._start_node] + node_history[:idx]
+                stack_or_queue = self._update_stack_or_queue(
+                    node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
 
             decov = self.calc_decoverage([self._start_node] + node_history[:idx + 1])
@@ -234,33 +248,34 @@ class BFSEvaluator():
         assert node_history[0] != self._start_node
 
         decov_list = [self.calc_decoverage([self._start_node])]
-        bfs_cnt = 0
+        cnt = 0
 
-        old_new_queues = self._get_adj_nodes(self._start_node), []
+        stack_or_queue = self._init_stack_or_queue()
 
         for idx, (node, teacher_node) in enumerate(
             zip(node_history, teacher_node_history)
         ):
+            check_algo_flag = self._check_algo(
+                node, stack_or_queue, [self._start_node] + teacher_node_history[:idx]
+            )
+
+            if check_algo_flag:
+                cnt += 1
+
+            stack_or_queue = self._update_stack_or_queue(
+                teacher_node, stack_or_queue, [self._start_node] + teacher_node_history[:idx]
+            )
+
             if isinstance(node, Invalid):
-                decov_list.append(decov_list[-1])
-                continue
-
-            check_bfs_flag = self._check_bfs(
-                node, old_new_queues, [self._start_node] + teacher_node_history[:idx]
-            )
-
-            if check_bfs_flag:
-                bfs_cnt += 1
-
-            old_new_queues = self._update_queues(
-                teacher_node, old_new_queues, [self._start_node] + teacher_node_history[:idx]
-            )
-
-            decov = self.calc_decoverage([self._start_node] + teacher_node_history[:idx] + [node])
+                decov = decov_list[-1]
+            else:
+                decov = self.calc_decoverage(
+                    [self._start_node] + teacher_node_history[:idx] + [node]
+                )
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = bfs_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
+        acc = cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
         min_decov = decov_list[-1]
         sum_decov = sum(decov_list)
 
@@ -279,7 +294,7 @@ class BFSEvaluator():
 
         retry_cnt = 0
 
-        valid_nodes = set([self._start_node] + self._get_adj_nodes(self._start_node))
+        valid_nodes = self._get_valid_nodes(self._start_node, [])
 
         while (
             len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
@@ -302,11 +317,11 @@ class BFSEvaluator():
                 model.force(formatted)
 
             if not isinstance(next_node, Invalid):
+                valid_nodes = self._get_valid_nodes(next_node, [self._start_node] + node_history)
                 prompt = self._get_prompt(next_node, [self._start_node] + node_history)
                 node_history.append(next_node)
                 retry_cnt = 0
 
-                valid_nodes = valid_nodes.union(self._get_adj_nodes(next_node))
                 continue
 
             if retry_cnt == 0:
@@ -327,7 +342,7 @@ class BFSEvaluator():
         return node_history
 
     def _test_tf(self, model):
-        valid_nodes = set([self._start_node] + self._get_adj_nodes(self._start_node))
+        valid_nodes = self._get_valid_nodes(self._start_node, [])
         node_history = []
         teacher_node_history = []
 
@@ -346,7 +361,7 @@ class BFSEvaluator():
 
             node_history.append(next_node)
             teacher_node_history.append(teacher_reply)
-            valid_nodes = valid_nodes.union(self._get_adj_nodes(teacher_reply))
+            valid_nodes = self._get_valid_nodes(teacher_reply, [self._start_node] + teacher_node_history)
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
