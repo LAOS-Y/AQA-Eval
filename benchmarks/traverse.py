@@ -6,6 +6,7 @@ from loguru import logger
 from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 
 
+# TODO: refine or just remove mcq and provide_state
 class TraverseGraphEvaluator():
     def __init__(
         self, node_num=4, explain_algo=True, mcq=True, provide_state=True,
@@ -126,7 +127,7 @@ class TraverseGraphEvaluator():
 
         response = ""
         prompt = self._get_prompt(self._start_node, [])
-        decov_sum = self.calc_decoverage([self._start_node])
+        decov_sum = 0.0  # ignore the starting node
 
         next_node = self._start_node
         node_history = [self._start_node]
@@ -159,7 +160,7 @@ class TraverseGraphEvaluator():
 
         stack_or_queue = self._init_stack_or_queue()
 
-        for idx, node in enumerate(node_history):  # remove the starting node
+        for idx, node in enumerate(node_history):
             if isinstance(node, Invalid):
                 assert idx == len(node_history) - 1, \
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
@@ -180,11 +181,16 @@ class TraverseGraphEvaluator():
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = highest_cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
+        # ignore the starting node
+        # dont ignore last invalid
+        acc = highest_cnt / len(node_history)
         min_decov = decov_list[-1]
-        sum_decov = sum(decov_list)
+        # ignore the starting node
+        sum_decov = sum(decov_list[1:])
 
-        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list}
+        metrics = {
+            "acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list
+        }
         return metrics
 
     def calc_metric_tf(self, node_history, teacher_node_history):
@@ -219,11 +225,16 @@ class TraverseGraphEvaluator():
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
-        acc = cnt / len(node_history)  # ignore the starting node  # dont ignore last invalid
+        # ignore the starting node
+        # dont ignore last invalid
+        acc = cnt / len(node_history)
         min_decov = decov_list[-1]
-        sum_decov = sum(decov_list)
+        # ignore the starting node
+        sum_decov = sum(decov_list[1:])
 
-        metrics = {"acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list}
+        metrics = {
+            "acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list
+        }
         return metrics
 
     def _test_no_tf(self, model):
@@ -280,7 +291,8 @@ class TraverseGraphEvaluator():
         if isinstance(next_node, Invalid):
             node_history.append(next_node)  # save the last invalid
             logger.info("Max retry times reached, stop interaction now.")
-        elif len(set([self._start_node] + node_history)) != len(self._graph.nodes):  # target not achieved
+        elif len(set([self._start_node] + node_history)) != len(self._graph.nodes):
+            # target not achieved
             logger.info("Max steps reached, stop the interaction now.")
 
         return node_history
@@ -305,7 +317,9 @@ class TraverseGraphEvaluator():
 
             node_history.append(next_node)
             teacher_node_history.append(teacher_reply)
-            valid_nodes = self._get_valid_nodes(teacher_reply, [self._start_node] + teacher_node_history)
+            valid_nodes = self._get_valid_nodes(
+                teacher_reply, [self._start_node] + teacher_node_history
+            )
 
         self.dialog_logger.info(Q=self._teacher_qa_list[-1][0])
 
@@ -316,7 +330,7 @@ class TraverseGraphEvaluator():
         self.reset_model(model, instruction)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
-        # self._start_node = random.randint(0, self.node_num-1)
+        # TODO: maybe choose random node as the starting node
         self._start_node = 0
 
         logger.info("Generated random graph: nodes: {}, edges: {}"
@@ -333,7 +347,6 @@ class TraverseGraphEvaluator():
         full_result["metric"] = metric
         full_result["output"] = dict(
             node_history=model_node_history,
-            # inv_coverage_list=covs
             teacher_node_history=teacher_node_history if teacher_forcing else None
         )
         full_result["env"] = dict(
@@ -363,8 +376,6 @@ class TraverseGraphEvaluator():
         full_result = {}
         full_result["metric"] = metric
         full_result["env"] = dict(
-            # min=self.min,
-            # max=self.max,
             graph=self._graph,
             times=len(metrics),
             teacher_forcing_mode=teacher_forcing_mode,
