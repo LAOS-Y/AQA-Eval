@@ -9,8 +9,8 @@ from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
 # TODO: refine or just remove mcq and provide_state
 class TraverseGraphEvaluator():
     def __init__(
-        self, node_num=4, explain_algo=True, mcq=True, provide_state=True,
-        format_tolerant=True, max_retry=0, max_step=20
+        self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
+        format_tolerant=True, max_retry=0, max_step=None
     ):
         self.node_num = node_num
         self.mcq = mcq
@@ -253,7 +253,8 @@ class TraverseGraphEvaluator():
 
         while (
             len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
-            (len(node_history)) < self.max_step and retry_cnt < (self.max_retry + 1)
+            (self.max_step is None or len(node_history) < self.max_step) and
+            retry_cnt < (self.max_retry + 1)
         ):
             self.dialog_logger.info(Q=prompt)
 

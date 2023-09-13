@@ -7,8 +7,8 @@ from .traverse import TraverseGraphEvaluator
 
 class BFSEvaluator(TraverseGraphEvaluator):
     def __init__(
-        self, node_num=4, explain_algo=True, mcq=True, provide_state=True,
-        format_tolerant=True, max_retry=0, max_step=20
+        self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
+        format_tolerant=True, max_retry=0, max_step=None
     ):
         super(BFSEvaluator, self).__init__(
             node_num, explain_algo, mcq, provide_state,
