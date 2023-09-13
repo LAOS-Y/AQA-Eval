@@ -186,7 +186,8 @@ class TraverseGraphEvaluator():
         acc = highest_cnt / len(node_history)
         min_decov = decov_list[-1]
         # ignore the starting node
-        sum_decov = sum(decov_list[1:])
+        decov_list = decov_list[1:]
+        sum_decov = sum(decov_list)
 
         metrics = {
             "acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list
@@ -230,7 +231,8 @@ class TraverseGraphEvaluator():
         acc = cnt / len(node_history)
         min_decov = decov_list[-1]
         # ignore the starting node
-        sum_decov = sum(decov_list[1:])
+        decov_list = decov_list[1:]
+        sum_decov = sum(decov_list)
 
         metrics = {
             "acc": acc, "min_decov": min_decov, "sum_decov": sum_decov, "decov_list": decov_list
