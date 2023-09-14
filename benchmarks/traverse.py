@@ -316,6 +316,7 @@ class TraverseGraphEvaluator(Benchmark):
 
     def test_one_time(self, model, teacher_forcing, instruction=None):
         self.reset()
+        # will use `self.default_insturction` if `instruction` is None
         self.reset_model(model, instruction)
 
         self._graph = networkx.random_tree(self.node_num).to_undirected()
