@@ -30,7 +30,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         model.reset(instruction)
 
-    def refresh_teacher_qa(self):
+    def _refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
         self.reset_model(self.teacher, verbose=False)
         self._teacher_qa_list = []
@@ -124,7 +124,7 @@ class Benchmark(metaclass=abc.ABCMeta):
             logger.info(f"Evaluation metric #{i}: {metric}")
 
             if not get_tf_flag(i):
-                self.refresh_teacher_qa()
+                self._refresh_teacher_qa()
                 single_result["history"]["teacher_history"] = self._teacher_qa_list
 
             metrics.append(metric)

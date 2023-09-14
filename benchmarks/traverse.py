@@ -59,6 +59,34 @@ class TraverseGraphEvaluator(Benchmark):
 
         return prompt
 
+    def _refresh_teacher_qa(self):
+        super(TraverseGraphEvaluator, self)._refresh_teacher_qa()
+
+        response = ""
+        prompt = self._get_prompt(self._start_node, [])
+        decov_sum = 0.0  # ignore the starting node
+
+        next_node = self._start_node
+        node_history = [self._start_node]
+
+        # while exist node not visited
+        while len(set(self._graph.nodes).difference(set(node_history))) != 0:
+            response = self.teacher(prompt)
+            next_node = int(response)
+
+            self._teacher_qa_list.append((prompt, next_node))
+            prompt = self._get_prompt(next_node, node_history)
+
+            decov_sum += self._calc_decoverage(node_history + [next_node])
+            node_history.append(next_node)
+
+        self._teacher_qa_list.append((prompt, None))
+
+        # remove start node in node_history
+        node_history = node_history[1:]
+
+        return decov_sum
+
     def _extract_answer(self, reply, valid_nodes):
         # parse reply from model and return the formatted answer
         # return an `Invalid` if failed to do so
@@ -98,43 +126,15 @@ class TraverseGraphEvaluator(Benchmark):
         '''
         raise NotImplementedError
 
-    def calc_decoverage(self, visited_nodes):
+    def _calc_decoverage(self, visited_nodes):
         assert self._start_node in visited_nodes
         return 1 - len(set(visited_nodes)) / len(self._graph.nodes)
-
-    def refresh_teacher_qa(self):
-        super(TraverseGraphEvaluator, self).refresh_teacher_qa()
-
-        response = ""
-        prompt = self._get_prompt(self._start_node, [])
-        decov_sum = 0.0  # ignore the starting node
-
-        next_node = self._start_node
-        node_history = [self._start_node]
-
-        # while exist node not visited
-        while len(set(self._graph.nodes).difference(set(node_history))) != 0:
-            response = self.teacher(prompt)
-            next_node = int(response)
-
-            self._teacher_qa_list.append((prompt, next_node))
-            prompt = self._get_prompt(next_node, node_history)
-
-            decov_sum += self.calc_decoverage(node_history + [next_node])
-            node_history.append(next_node)
-
-        self._teacher_qa_list.append((prompt, None))
-
-        # remove start node in node_history
-        node_history = node_history[1:]
-
-        return decov_sum
 
     def calc_metric_no_tf(self, node_history):
         assert len(node_history) > 0
         assert node_history[0] != self._start_node
 
-        decov_list = [self.calc_decoverage([self._start_node])]
+        decov_list = [self._calc_decoverage([self._start_node])]
         highest_cnt = 0
         check_algo_flag = True
 
@@ -157,7 +157,7 @@ class TraverseGraphEvaluator(Benchmark):
                     node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
 
-            decov = self.calc_decoverage([self._start_node] + node_history[:idx + 1])
+            decov = self._calc_decoverage([self._start_node] + node_history[:idx + 1])
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
             decov_list.append(decov)
 
@@ -181,7 +181,7 @@ class TraverseGraphEvaluator(Benchmark):
         assert len(node_history) > 0
         assert node_history[0] != self._start_node
 
-        decov_list = [self.calc_decoverage([self._start_node])]
+        decov_list = [self._calc_decoverage([self._start_node])]
         cnt = 0
 
         stack_or_queue = self._init_stack_or_queue()
@@ -203,7 +203,7 @@ class TraverseGraphEvaluator(Benchmark):
             if isinstance(node, Invalid):
                 decov = decov_list[-1]
             else:
-                decov = self.calc_decoverage(
+                decov = self._calc_decoverage(
                     [self._start_node] + teacher_node_history[:idx] + [node]
                 )
             assert decov <= decov_list[-1], "`decov_list` should be a non-ascent sequence"
@@ -291,7 +291,7 @@ class TraverseGraphEvaluator(Benchmark):
         node_history = []
         teacher_node_history = []
 
-        optim_decov_sum = self.refresh_teacher_qa()
+        optim_decov_sum = self._refresh_teacher_qa()
 
         # no retry when teacher forcing
         for prompt, teacher_reply in self._teacher_qa_list[:-1]:

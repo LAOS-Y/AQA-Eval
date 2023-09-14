@@ -37,6 +37,20 @@ class BinarySearchEvaluator(Benchmark):
 
         return f"Right answer. The true number is equal to {guess}."
 
+    def _refresh_teacher_qa(self):
+        super(BinarySearchEvaluator, self)._refresh_teacher_qa()
+
+        guess = None
+        prompt = "START"
+
+        while guess != self._target:
+            guess = int(self.teacher(prompt))
+            self._teacher_qa_list.append((prompt, guess))
+
+            prompt = self._get_prompt(guess)
+
+        self._teacher_qa_list.append((prompt, None))
+
     def _extract_answer(self, reply):
         # parse reply from model and return the formatted answer
         # return an `Invalid` if failed to do so
@@ -97,20 +111,6 @@ class BinarySearchEvaluator(Benchmark):
 
         return self.calc_metric_tf(answer_list, target_list)
 
-    def refresh_teacher_qa(self):
-        super(BinarySearchEvaluator, self).refresh_teacher_qa()
-
-        guess = None
-        prompt = "START"
-
-        while guess != self._target:
-            guess = int(self.teacher(prompt))
-            self._teacher_qa_list.append((prompt, guess))
-
-            prompt = self._get_prompt(guess)
-
-        self._teacher_qa_list.append((prompt, None))
-
     def _test_no_tf(self, model):
         # test one time without teacher forcing
         answer = None
@@ -169,7 +169,7 @@ class BinarySearchEvaluator(Benchmark):
         answer_list = []
         teacher_answer_list = []
 
-        self.refresh_teacher_qa()
+        self._refresh_teacher_qa()
 
         # no retry when teacher forcing
         for prompt, teacher_answer in self._teacher_qa_list[:-1]:
