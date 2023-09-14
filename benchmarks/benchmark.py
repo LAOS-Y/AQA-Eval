@@ -9,6 +9,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
+        # `max_step` will be deactivated if `max_step is None`
         self.max_step = max_step
 
         self.teacher = None

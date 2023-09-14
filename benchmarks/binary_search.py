@@ -39,7 +39,7 @@ class BinarySearchEvaluator(Benchmark):
 
     def _extract_answer(self, reply):
         # parse reply from model and return the formatted answer
-        # return `Invalid` if failed to do so
+        # return an `Invalid` if failed to do so
         if self.format_tolerant:
             nums = re.findall(r'\d+', reply)
             if not len(nums):
@@ -122,7 +122,7 @@ class BinarySearchEvaluator(Benchmark):
         while (
             answer != self._target
             # stop when reaching `self.max_step`
-            and (self.max_step is None or len(answer_list) < self.max_step)
+            and (self.max_step is not None or len(answer_list) < self.max_step)
             # stop when reaching `self.max_retry`
             and retry_cnt < (self.max_retry + 1)
         ):
@@ -222,9 +222,11 @@ class BinarySearchEvaluator(Benchmark):
             metric, answer_list, teacher_answer_list, model_history, teacher_forcing, instruction
         )
 
-        result["env"]["min"] = self.min
-        result["env"]["max"] = self.max
-        result["env"]["target"] = self._target
+        result["env"].update(
+            min=self.min,
+            max=self.max,
+            target=self.target,
+        )
 
         return result
 
