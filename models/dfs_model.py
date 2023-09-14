@@ -19,7 +19,7 @@ class DFSModel():
     def _get_adj_nodes(self, prompt):
         return extract_int(prompt.split(".")[0])
 
-    def reset(self, instruction):
+    def reset(self, instruction=""):
         self.history = [0]
         self.node_stack = [0]  # dfs trajectory
 
