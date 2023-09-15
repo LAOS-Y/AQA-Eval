@@ -189,7 +189,7 @@ class BinarySearchEvaluator(Benchmark):
 
         return answer_list, teacher_answer_list
 
-    def test_one_time(self, model, teacher_forcing=False, instruction=None):
+    def naive_test(self, model, teacher_forcing=False, instruction=None):
         self.reset()
         # will use `self.default_instruction` if `instruction` is None
         self.reset_model(model, instruction)

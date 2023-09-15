@@ -87,7 +87,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         metrics = []
         single_results = []
         for i in range(times):
-            metric, single_result = self.test_one_time(model, teacher_forcing)
+            metric, single_result = self.naive_test(model, teacher_forcing)
 
             logger.info(f"Evaluation metric #{i}: {metric}")
             metrics.append(metric)
@@ -116,7 +116,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         metrics = []
         single_results = []
         for i in range(times):
-            metric, single_result = self.test_one_time(
+            metric, single_result = self.naive_test(
                 model, get_tf_flag(i),
                 instruction=None if i == 0 else instruction_w_examples
             )
@@ -186,5 +186,5 @@ class Benchmark(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def test_one_time(self, model, teacher_forcing=False, instruction=None):
+    def naive_test(self, model, teacher_forcing=False, instruction=None):
         pass

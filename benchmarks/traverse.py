@@ -314,7 +314,7 @@ class TraverseGraphEvaluator(Benchmark):
 
         return node_history, teacher_node_history, optim_decov_sum
 
-    def test_one_time(self, model, teacher_forcing, instruction=None):
+    def naive_test(self, model, teacher_forcing, instruction=None):
         self.reset()
         # will use `self.default_instruction` if `instruction` is None
         self.reset_model(model, instruction)
