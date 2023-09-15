@@ -21,9 +21,9 @@ class Benchmark(metaclass=abc.ABCMeta):
 
     def reset_model(self, model, instruction=None, verbose=True):
         # clear dialog history and give instruction
-        # will use `self.default_insturction` if `instruction` is None
+        # will use `self.default_instruction` if `instruction` is None
         if instruction is None:
-            instruction = self.default_insturction
+            instruction = self.default_instruction
 
         if verbose:
             self.dialog_logger.info(System=instruction)
@@ -55,7 +55,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         )
         result["env"] = dict(
             teacher_forcing=teacher_forcing,
-            instruction=self.default_insturction if instruction is None else instruction
+            instruction=self.default_instruction if instruction is None else instruction
         )
         result["history"] = dict(
             model_history=model_history,
@@ -75,7 +75,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         full_result["env"] = dict(
             times=len(metrics),
             teacher_forcing_mode=teacher_forcing_mode,
-            default_insturction=self.default_insturction
+            default_instruction=self.default_instruction
         )
         full_result["single_results"] = single_results
 
@@ -110,7 +110,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
             return i < times - 1
 
-        instruction_w_examples = self.default_insturction \
+        instruction_w_examples = self.default_instruction \
             + "\nHere are some examples (the right answer for each example is different):\n"
 
         metrics = []
@@ -153,7 +153,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
-    def default_insturction(self):
+    def default_instruction(self):
         pass
 
     @abc.abstractmethod

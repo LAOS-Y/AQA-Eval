@@ -21,7 +21,7 @@ class BinarySearchEvaluator(Benchmark):
         self._target = None
 
     @property
-    def default_insturction(self):
+    def default_instruction(self):
         return "You are required to guess the random number which I have just picked between {} and {}. " \
                "I will only tell you whether the true number is bigger or lower than your guess. " \
                "Adjust your guess according to my response. " \
@@ -191,7 +191,7 @@ class BinarySearchEvaluator(Benchmark):
 
     def test_one_time(self, model, teacher_forcing=False, instruction=None):
         self.reset()
-        # will use `self.default_insturction` if `instruction` is None
+        # will use `self.default_instruction` if `instruction` is None
         self.reset_model(model, instruction)
 
         self._target = random.randint(self.min, self.max)

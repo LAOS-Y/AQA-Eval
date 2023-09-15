@@ -17,7 +17,7 @@ class DFSEvaluator(TraverseGraphEvaluator):
         self.teacher = DFSModel()
 
     @property
-    def default_insturction(self):
+    def default_instruction(self):
         instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
                       "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
                       "All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. " \

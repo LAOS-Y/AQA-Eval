@@ -17,7 +17,7 @@ class BFSEvaluator(TraverseGraphEvaluator):
         self.teacher = BFSModel()
 
     @property
-    def default_insturction(self):
+    def default_instruction(self):
         instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
                       "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
                       "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
