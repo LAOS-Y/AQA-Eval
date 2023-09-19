@@ -1,5 +1,5 @@
-import re
 from .dfs_model import extract_int
+
 
 class BFSModel():
     def __init__(self):
@@ -8,7 +8,7 @@ class BFSModel():
     def _get_adj_nodes(self, prompt):
         return extract_int(prompt.split(".")[0])
 
-    def reset(self, instruction):
+    def reset(self, instruction=""):
         self.history = [0]
         self.node_queue = []  # dfs trajectory
 

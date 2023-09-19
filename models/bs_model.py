@@ -4,7 +4,7 @@ class BSModel():
         self.max = max
         self.reset()
 
-    def reset(self, init_context=""):
+    def reset(self, instruction=""):
         self.last_guess = None
         self.l = self.min
         self.r = self.max + 1
