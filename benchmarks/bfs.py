@@ -8,23 +8,34 @@ from .traverse import TraverseGraphEvaluator
 class BFSEvaluator(TraverseGraphEvaluator):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
-        format_tolerant=True, max_retry=0, max_step=None
+        format_tolerant=True, max_retry=0, max_step=None, use_scene_instruction=False
     ):
         super(BFSEvaluator, self).__init__(
             node_num, explain_algo, mcq, provide_state,
-            format_tolerant, max_retry, max_step
+            format_tolerant, max_retry, max_step, use_scene_instruction
         )
         self.teacher = BFSModel()
 
     @property
     def default_instruction(self):
-        instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
-                      "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
-                      "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
-                      "You can only visit nodes that are adjacent to the already visited nodes. " \
-                      "You can only reply with a integer number indicating which node to be visited next. " \
-                      "Please traverse the entire graph in as few rounds as possible." \
-                      "Initially, you have already visited node 0." \
+        if not self.use_scene_instruction:
+            instruction = "You are required to visit all the nodes in an undirected non-cyclic graph." \
+                          "An undirected non-cyclic garph contains a set of node, and a set of edges that each connects a pair of nodes. " \
+                          "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
+                          "You can only visit nodes that are adjacent to the already visited nodes. " \
+                          "You can only reply with a integer number indicating which node to be visited next. " \
+                          "Please traverse the entire graph in as few rounds as possible." \
+                          "Initially, you have already visited node 0."
+        else:
+            instruction = "You are the manager of a chain of restaurants. " \
+                          "The current goal of the restaurant is to open a branch in every city in Country X. " \
+                          "Currently, the restaurant has only one branch in City 0 of Country X. " \
+                          "Considering the opening and management costs, each time you open a new branch, " \
+                          "you can only choose one city from all the neighboring cities of " \
+                          "the cities where you've already opened branches." \
+                          "Once you choose a city, you need to reply with the city's number, " \
+                          "and then you will be given a list of all the neighboring cities of that chosen city." \
+                          "Please open a branch in every city in Country X as quickly as possible."
 
         if self.explain_algo:
             instruction += "You should use breadth first search algorithm. " \
@@ -36,11 +47,59 @@ class BFSEvaluator(TraverseGraphEvaluator):
 
         return instruction
 
+    def _get_prompt(self, next_node, visited_nodes):
+        '''
+        Generate prompt used in exploration step
+
+        Return: prompt (string)
+        '''
+
+        if len(set(visited_nodes + [next_node])) == len(self._graph.nodes):
+            if not self.use_scene_instruction:
+                return "Well Done. You have visited all the nodes in the graph. " \
+                       "Total number of steps: {}".format(len(visited_nodes[1:] + [next_node]))
+
+            return "Well Done. You have open branches in all cities of Country X. " \
+                    "Total number of steps: {}".format(len(visited_nodes[1:] + [next_node]))
+
+        adj_nodes = self._get_adj_nodes(next_node)
+
+        if not self.use_scene_instruction:
+            prompt = "Adjacent nodes: {}.".format(", ".join([str(i) for i in adj_nodes]))
+        else:
+            prompt = "Adjacent cities: {}.".format(", ".join([str(i) for i in adj_nodes]))
+
+        if self.provide_state:
+            unvisited_adj_nodes = set(adj_nodes).difference(set(visited_nodes))
+            if not self.use_scene_instruction:
+                if len(unvisited_adj_nodes) == 0:
+                    prompt += " You have visited all nodes adjacent to this node."
+                else:
+                    prompt += " You have not visited node {}." \
+                              .format(", ".join([str(i) for i in unvisited_adj_nodes]))
+            else:
+                if len(unvisited_adj_nodes) == 0:
+                    prompt += " You have open branches in all cities adjacent to this city."
+                else:
+                    prompt += " You have not open branches in cities {}." \
+                              .format(", ".join([str(i) for i in unvisited_adj_nodes]))
+        if self.mcq:
+            valid_nodes = self._get_valid_nodes(next_node, visited_nodes)
+
+            valid_nodes = {str(node) for node in valid_nodes}
+
+            if not self.use_scene_instruction:
+                prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
+            else:
+                prompt += " Choose the next city to open a branch in: {}.".format(", ".join(valid_nodes))
+
+        return prompt
+
     def _get_valid_nodes(self, next_node, visited_nodes):
         valid_nodes = set(
             sum(
                 [(self._get_adj_nodes(node) + [node]) for node in visited_nodes + [next_node]],
-                start=[]
+                []
             )
         )
         assert self._start_node in valid_nodes

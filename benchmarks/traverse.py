@@ -11,14 +11,14 @@ from .benchmark import Benchmark
 class TraverseGraphEvaluator(Benchmark):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
-        format_tolerant=True, max_retry=0, max_step=None
+        format_tolerant=True, max_retry=0, max_step=None, use_scene_instruction=False
     ):
         super(TraverseGraphEvaluator, self).__init__(format_tolerant, max_retry, max_step)
         self.node_num = node_num
         self.explain_algo = explain_algo
         self.mcq = mcq
         self.provide_state = provide_state
-
+        self.use_scene_instruction = use_scene_instruction
         # Set `self.teacher` here
 
     def reset(self):
