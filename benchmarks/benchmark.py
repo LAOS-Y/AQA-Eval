@@ -1,7 +1,8 @@
 import abc
 from loguru import logger
+import json
 
-from utils import DialogLogger, Invalid, FormatInvalid, ValueInvalid, dict_mean
+from utils import DialogLogger, dict_mean
 
 
 class Benchmark(metaclass=abc.ABCMeta):
@@ -14,8 +15,14 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         self.teacher = None
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+        self.test_cases = []
 
-    def reset(self):
+    def load_testcases_from_file(self, path):
+        self.test_cases = json.load(open(path))
+        assert isinstance(self.test_cases, list), self.test_cases
+
+    def reset(self, test_case):
+        self.test_case = test_case
         self.teacher.reset()
         self._teacher_qa_list = []
 
@@ -29,6 +36,11 @@ class Benchmark(metaclass=abc.ABCMeta):
             self.dialog_logger.info(System=instruction)
 
         model.reset(instruction)
+
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+        self.reset(test_case)
+        # will use `self.default_instruction` if `instruction` is None
+        self.reset_model(model, instruction)
 
     def _refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
@@ -151,6 +163,61 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return self._context_kept_test(model, times, teacher_forcing_mode)
 
+    def _add_examples(self, instruction, qa_lists, rebuild_context_func):
+        if not qa_lists:
+            return instruction
+
+        instruction_w_examples = instruction \
+            + "\nHere are some examples (the right answer for each example is different):\n"
+
+        for i, qa_list in enumerate(qa_lists):
+            example_ctx = f"Example #{i + 1}: \n" + rebuild_context_func(qa_list)
+            instruction_w_examples += example_ctx
+
+        return instruction_w_examples
+
+    def _init_teacher_qa_lists(self, num_examples):
+        if not num_examples:
+            return []
+
+        teacher_qa_lists = []
+        for example_case in self.test_cases[- num_examples:]:
+            self.reset(example_case)
+            self._refresh_teacher_qa()
+            teacher_qa_lists.append(self._teacher_qa_list)
+
+        return teacher_qa_lists
+
+    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False):
+        assert times <= len(self.test_cases), self.test_cases
+        assert num_examples <= len(self.test_cases), self.test_cases
+
+        teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
+        metrics = []
+        single_results = []
+
+        for test_case in self.test_cases[:times]:
+            instruction_w_examples = self._add_examples(
+                self.default_instruction, teacher_qa_lists, model.rebuild_context
+            )
+            metric, single_result = self.naive_test(
+                model, teacher_forcing,
+                instruction=instruction_w_examples,
+                test_case=test_case
+            )
+
+            if num_examples:
+                teacher_qa_lists = teacher_qa_lists[1:]
+                if not teacher_forcing:
+                    self._refresh_teacher_qa()
+                    # single_result["history"]["teacher_history"] = deepcopy(self._teacher_qa_list)
+                teacher_qa_lists.append(self._teacher_qa_list)
+
+            metrics.append(metric)
+            single_results.append(single_result)
+
+        return self._pack_results(metrics, single_results, teacher_forcing_mode=teacher_forcing)
+
     @property
     @abc.abstractmethod
     def default_instruction(self):
@@ -183,8 +250,4 @@ class Benchmark(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def _test_tf(self, model):
-        pass
-
-    @abc.abstractmethod
-    def naive_test(self, model, teacher_forcing=False, instruction=None):
         pass
