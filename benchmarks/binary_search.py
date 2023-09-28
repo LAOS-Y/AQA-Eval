@@ -9,8 +9,11 @@ from .benchmark import Benchmark
 
 
 class BinarySearchEvaluator(Benchmark):
-    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_step=None):
-        super(BinarySearchEvaluator, self).__init__(format_tolerant, max_retry, max_step)
+    def __init__(
+        self, min=0, max=100,
+        format_tolerant=True, max_retry=0, max_step=None, verbose=True
+    ):
+        super(BinarySearchEvaluator, self).__init__(format_tolerant, max_retry, max_step, verbose)
         assert min <= max
         self.min = min
         self.max = max

@@ -6,7 +6,7 @@ from utils import DialogLogger, dict_mean
 
 
 class Benchmark(metaclass=abc.ABCMeta):
-    def __init__(self, format_tolerant=True, max_retry=0, max_step=None):
+    def __init__(self, format_tolerant=True, max_retry=0, max_step=None, verbose=True):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
@@ -14,7 +14,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.max_step = max_step
 
         self.teacher = None
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"], enabled=verbose)
         self.test_cases = []
 
     def load_testcases_from_file(self, path):
