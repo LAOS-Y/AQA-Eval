@@ -16,9 +16,16 @@ class BinarySearchEvaluator(Benchmark):
         self.max = max
         self.teacher = BSModel(min, max)
 
-    def reset(self):
-        super(BinarySearchEvaluator, self).reset()
-        self._target = None
+    def reset(self, test_case=None):
+        super(BinarySearchEvaluator, self).reset(test_case)
+
+        if test_case is None:
+            logger.info("Generating random number.")
+            self._target = random.randint(self.min, self.max)
+        else:
+            logger.info("Using pre-generated random number.")
+            self._target = test_case["target"]
+            assert self.min <= self._target and self._target <= self.max, self._target
 
     @property
     def default_instruction(self):
@@ -122,7 +129,7 @@ class BinarySearchEvaluator(Benchmark):
         while (
             answer != self._target
             # stop when reaching `self.max_step`
-            and (self.max_step is not None or len(answer_list) < self.max_step)
+            and (self.max_step is None or len(answer_list) < self.max_step)
             # stop when reaching `self.max_retry`
             and retry_cnt < (self.max_retry + 1)
         ):
@@ -189,12 +196,11 @@ class BinarySearchEvaluator(Benchmark):
 
         return answer_list, teacher_answer_list
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None):
-        self.reset()
-        # will use `self.default_instruction` if `instruction` is None
-        self.reset_model(model, instruction)
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+        super(BinarySearchEvaluator, self).naive_test(
+            model, teacher_forcing, instruction, test_case
+        )
 
-        self._target = random.randint(self.min, self.max)
         logger.info("Picked Random Number: {}".format(self._target))
 
         if teacher_forcing:
@@ -225,7 +231,7 @@ class BinarySearchEvaluator(Benchmark):
         result["env"].update(
             min=self.min,
             max=self.max,
-            target=self.target,
+            target=self._target,
         )
 
         return result

@@ -21,8 +21,23 @@ class TraverseGraphEvaluator(Benchmark):
 
         # Set `self.teacher` here
 
-    def reset(self):
-        super(TraverseGraphEvaluator, self).reset()
+    def reset(self, test_case=None):
+        super(TraverseGraphEvaluator, self).reset(test_case)
+
+        # TODO: maybe choose random node as the starting node
+        self._start_node = 0
+
+        if test_case is None:
+            logger.info("Generating random graph.")
+            self._graph = networkx.random_tree(self.node_num).to_undirected()
+        else:
+            logger.info("Using pre-generated random graph.")
+            self._graph = networkx.Graph()
+            assert len(test_case["nodes"]) == self.node_num, test_case["nodes"]
+            self._graph.add_nodes_from(test_case["nodes"])
+            self._graph.add_edges_from(test_case["edges"])
+
+        logger.info("nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
 
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
@@ -108,7 +123,7 @@ class TraverseGraphEvaluator(Benchmark):
                 return ValueInvalid(next_node)
             return next_node
         except ValueError:
-            return FormatInvalid(next_node)
+            return FormatInvalid(reply)
 
     def _init_stack_or_queue(self):
         raise NotImplementedError
@@ -132,7 +147,6 @@ class TraverseGraphEvaluator(Benchmark):
 
     def calc_metric_no_tf(self, node_history):
         assert len(node_history) > 0
-        assert node_history[0] != self._start_node
 
         decov_list = [self._calc_decoverage([self._start_node])]
         highest_cnt = 0
@@ -240,9 +254,9 @@ class TraverseGraphEvaluator(Benchmark):
         valid_nodes = self._get_valid_nodes(self._start_node, [])
 
         while (
-            len(set([self._start_node] + node_history)) != len(self._graph.nodes) and
-            (self.max_step is None or len(node_history) < self.max_step) and
-            retry_cnt < (self.max_retry + 1)
+            len(set([self._start_node] + node_history)) != len(self._graph.nodes)
+            and (self.max_step is None or len(node_history) < self.max_step)
+            and retry_cnt < (self.max_retry + 1)
         ):
             self.dialog_logger.info(Q=prompt)
 
@@ -314,17 +328,10 @@ class TraverseGraphEvaluator(Benchmark):
 
         return node_history, teacher_node_history, optim_decov_sum
 
-    def naive_test(self, model, teacher_forcing, instruction=None):
-        self.reset()
-        # will use `self.default_instruction` if `instruction` is None
-        self.reset_model(model, instruction)
-
-        self._graph = networkx.random_tree(self.node_num).to_undirected()
-        # TODO: maybe choose random node as the starting node
-        self._start_node = 0
-
-        logger.info("Generated random graph: nodes: {}, edges: {}"
-                    .format(self._graph.nodes, self._graph.edges))
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+        super(TraverseGraphEvaluator, self).naive_test(
+            model, teacher_forcing, instruction, test_case
+        )
 
         if teacher_forcing:
             model_node_history, teacher_node_history, optim_decov_sum = self._test_tf(model)
@@ -368,7 +375,8 @@ class TraverseGraphEvaluator(Benchmark):
         )
 
         full_result["env"].update(dict(
-            graph=self._graph,
+            nodes=list(self._graph.nodes),
+            edges=list(self._graph.edges),
             start_node=self._start_node,
         ))
 
