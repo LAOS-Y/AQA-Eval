@@ -3,10 +3,12 @@ from loguru import logger
 
 
 class DialogLogger():
-    def __init__(self, order, column_width=64, h_space=8):
+    def __init__(self, order, column_width=64, h_space=8, enabled=True):
         self.order = order
         self.column_width = column_width
         self.h_space = h_space
+        # won't print anything if `self.enabled==False`
+        self.enabled = enabled
 
     def _multi_column_log(self, print_func, **columns):
         for name in columns:
@@ -57,4 +59,5 @@ class DialogLogger():
         print_func("-" * self.column_width)
 
     def info(self, **columns):
-        self._multi_column_log(logger.info, **columns)
+        if self.enabled:
+            self._multi_column_log(logger.info, **columns)

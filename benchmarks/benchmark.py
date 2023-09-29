@@ -205,6 +205,7 @@ class Benchmark(metaclass=abc.ABCMeta):
                 instruction=instruction_w_examples,
                 test_case=test_case
             )
+            logger.info(f"Evaluation metric #{i}: {metric}")
 
             if num_examples:
                 teacher_qa_lists = teacher_qa_lists[1:]

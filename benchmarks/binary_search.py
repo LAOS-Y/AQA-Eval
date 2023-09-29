@@ -204,7 +204,7 @@ class BinarySearchEvaluator(Benchmark):
             model, teacher_forcing, instruction, test_case
         )
 
-        logger.info("Picked Random Number: {}".format(self._target))
+        logger.info("Target number: {}".format(self._target))
 
         if teacher_forcing:
             answer_list, teacher_answer_list = self._test_tf(model)
