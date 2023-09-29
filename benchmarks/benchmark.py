@@ -1,12 +1,16 @@
 import abc
 from loguru import logger
 import json
+import os.path as osp
 
-from utils import DialogLogger, dict_mean
+from utils import DialogLogger, dict_mean, setup_logger
 
 
 class Benchmark(metaclass=abc.ABCMeta):
-    def __init__(self, format_tolerant=True, max_retry=0, max_step=None, verbose=True):
+    def __init__(
+            self, format_tolerant=True, max_retry=0, max_step=None,
+            verbose=True, output_dir=None
+        ):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
@@ -16,6 +20,8 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.teacher = None
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"], enabled=verbose)
         self.test_cases = []
+        if output_dir:
+            setup_logger(filename=osp.join(output_dir, "log.txt"))
 
     def load_testcases_from_file(self, path):
         self.test_cases = json.load(open(path))
