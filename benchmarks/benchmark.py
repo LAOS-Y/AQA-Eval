@@ -2,6 +2,7 @@ import abc
 from loguru import logger
 import json
 import os.path as osp
+import pickle as pkl
 
 from utils import DialogLogger, dict_mean, setup_logger
 
@@ -9,7 +10,7 @@ from utils import DialogLogger, dict_mean, setup_logger
 class Benchmark(metaclass=abc.ABCMeta):
     def __init__(
             self, format_tolerant=True, max_retry=0, max_step=None,
-            verbose=True, output_dir=None
+            verbose=True, output_dir=None, save_period=-1
         ):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
@@ -20,8 +21,13 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.teacher = None
         self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"], enabled=verbose)
         self.test_cases = []
-        if output_dir:
-            setup_logger(filename=osp.join(output_dir, "log.txt"))
+        self.output_dir = output_dir
+        setup_logger(output=output_dir)
+
+        # `self.save_period > 0`: save every `self.save_period` test cases
+        # `self.save_period == 0`: only save the final result
+        # `self.save_period < 0`: dont save results at all
+        self.save_period = save_period
 
     def load_testcases_from_file(self, path):
         self.test_cases = json.load(open(path))
@@ -202,7 +208,13 @@ class Benchmark(metaclass=abc.ABCMeta):
         metrics = []
         single_results = []
 
-        for test_case in self.test_cases[:times]:
+        from tqdm import tqdm
+        from rich.progress import track
+        # for i, test_case in track(enumerate(self.test_cases[:times]), total=times):
+        for i, test_case in tqdm(enumerate(self.test_cases[:times]), total=times):
+        # for i, test_case in enumerate(self.test_cases[:times]):
+            i += 1
+
             instruction_w_examples = self._add_examples(
                 self.default_instruction, teacher_qa_lists, model.rebuild_context
             )
@@ -223,7 +235,23 @@ class Benchmark(metaclass=abc.ABCMeta):
             metrics.append(metric)
             single_results.append(single_result)
 
-        return self._pack_results(metrics, single_results, teacher_forcing_mode=teacher_forcing)
+            if self.save_period > 0 and not i % self.save_period:
+                pkl.dump(
+                    {"single_results": single_results, "teacher_qa_lists": teacher_qa_lists},
+                    open(osp.join(self.output_dir, f"ckpt_{i}.pkl"), mode="wb")
+                )
+
+        metric, final_result = self._pack_results(
+            metrics, single_results, teacher_forcing_mode=teacher_forcing
+        )
+
+        if self.save_period >= 0 and self.output_dir is not None:
+            pkl.dump(
+                final_result,
+                open(osp.join(self.output_dir, "results_final.pkl"), mode="wb")
+            )
+
+        return metric, final_result
 
     @property
     @abc.abstractmethod
