@@ -4,7 +4,7 @@ import json
 import os.path as osp
 import pickle as pkl
 
-from utils import DialogLogger, dict_mean, setup_logger
+from utils import DialogLogger, dict_mean, InvalidEncoder, setup_logger
 
 
 class Benchmark(metaclass=abc.ABCMeta):
@@ -28,6 +28,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         # `self.save_period == 0`: only save the final result
         # `self.save_period < 0`: dont save results at all
         self.save_period = save_period
+        assert self.save_period < 0 or self.output_dir is not None
 
     def load_testcases_from_file(self, path):
         self.test_cases = json.load(open(path))
@@ -229,6 +230,10 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         start = len(single_results)
 
+        from tqdm import tqdm
+        from rich.progress import track
+        # for i, test_case in track(enumerate(self.test_cases[:times]), total=times):
+        # for i, test_case in tqdm(enumerate(self.test_cases[start: times]), total=times):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
@@ -261,8 +266,9 @@ class Benchmark(metaclass=abc.ABCMeta):
             single_results, teacher_forcing_mode=teacher_forcing
         )
 
-        if self.save_period >= 0 and self.output_dir is not None:
+        if self.save_period >= 0:
             self._save_ckpt(full_result, "results_final.pkl")
+            json.dumps(osp.join(self.output_dir, full_result), cls=InvalidEncoder)
 
         return metric, full_result
 
