@@ -88,8 +88,9 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return result
 
-    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+    def _pack_results(self, single_results, teacher_forcing_mode):
         # summarize the metrics from each test run and pack the detailed results
+        metrics = [result["metric"] for result in single_results]
         metric = dict_mean(metrics)
 
         metric = {"mean_" + k: v for k, v in metric.items()}
@@ -200,20 +201,36 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return teacher_qa_lists
 
-    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False):
+    def _save_ckpt(self, ckpt, filename):
+        pkl.dump(ckpt, open(osp.join(self.output_dir, filename), mode="wb"))
+        with open(osp.join(self.output_dir, "last_checkpoint"), mode="w") as f:
+            f.write(filename)
+
+    def _load_ckpt(self):
+        with open(osp.join(self.output_dir, "last_checkpoint"), mode="r") as f:
+            filename = f.readline()
+
+        ckpt = pkl.load(open(osp.join(self.output_dir, filename), mode="rb"))
+        # TODO: if the evaluation is finished, there will be no need for `teacher_qa_lists`
+        if filename == "results_final.pkl":
+            return ckpt, []
+
+        return ckpt["single_results"], ckpt["teacher_qa_lists"]
+
+    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False, resume=False):
         assert times <= len(self.test_cases), self.test_cases
         assert num_examples <= len(self.test_cases), self.test_cases
 
-        teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
-        metrics = []
-        single_results = []
+        if not resume:
+            single_results = []
+            teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
+        else:
+            single_results, teacher_qa_lists = self._load_ckpt()
 
-        from tqdm import tqdm
-        from rich.progress import track
-        # for i, test_case in track(enumerate(self.test_cases[:times]), total=times):
-        for i, test_case in tqdm(enumerate(self.test_cases[:times]), total=times):
-        # for i, test_case in enumerate(self.test_cases[:times]):
-            i += 1
+        start = len(single_results)
+
+        for i, test_case in enumerate(self.test_cases[start: times]):
+            i += start + 1
 
             instruction_w_examples = self._add_examples(
                 self.default_instruction, teacher_qa_lists, model.rebuild_context
@@ -232,26 +249,22 @@ class Benchmark(metaclass=abc.ABCMeta):
                     # single_result["history"]["teacher_history"] = deepcopy(self._teacher_qa_list)
                 teacher_qa_lists.append(self._teacher_qa_list)
 
-            metrics.append(metric)
             single_results.append(single_result)
 
             if self.save_period > 0 and not i % self.save_period:
-                pkl.dump(
+                self._save_ckpt(
                     {"single_results": single_results, "teacher_qa_lists": teacher_qa_lists},
-                    open(osp.join(self.output_dir, f"ckpt_{i}.pkl"), mode="wb")
+                    f"ckpt_{i}.pkl"
                 )
 
-        metric, final_result = self._pack_results(
-            metrics, single_results, teacher_forcing_mode=teacher_forcing
+        metric, full_result = self._pack_results(
+            single_results, teacher_forcing_mode=teacher_forcing
         )
 
         if self.save_period >= 0 and self.output_dir is not None:
-            pkl.dump(
-                final_result,
-                open(osp.join(self.output_dir, "results_final.pkl"), mode="wb")
-            )
+            self._save_ckpt(full_result, "results_final.pkl")
 
-        return metric, final_result
+        return metric, full_result
 
     @property
     @abc.abstractmethod

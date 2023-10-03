@@ -8,11 +8,13 @@ from .traverse import TraverseGraphEvaluator
 class BFSEvaluator(TraverseGraphEvaluator):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
-        format_tolerant=True, max_retry=0, max_step=None
+        format_tolerant=True, max_retry=0, max_step=None,
+        verbose=True, output_dir=None, save_period=-1
     ):
         super(BFSEvaluator, self).__init__(
             node_num, explain_algo, mcq, provide_state,
-            format_tolerant, max_retry, max_step
+            format_tolerant, max_retry, max_step,
+            verbose, output_dir, save_period
         )
         self.teacher = BFSModel()
 

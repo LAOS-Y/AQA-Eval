@@ -372,9 +372,9 @@ class TraverseGraphEvaluator(Benchmark):
 
         return result
 
-    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+    def _pack_results(self, single_results, teacher_forcing_mode):
         metrics, full_result = super(TraverseGraphEvaluator, self)._pack_results(
-            metrics, single_results, teacher_forcing_mode
+            single_results, teacher_forcing_mode
         )
 
         full_result["env"].update(dict(
