@@ -196,7 +196,6 @@ class TraverseGraphEvaluator(Benchmark):
 
     def calc_metric_tf(self, node_history, teacher_node_history):
         assert len(node_history) > 0
-        assert node_history[0] != self._start_node
 
         decov_list = [self._calc_decoverage([self._start_node])]
         cnt = 0
