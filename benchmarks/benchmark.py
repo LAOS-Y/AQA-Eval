@@ -227,13 +227,10 @@ class Benchmark(metaclass=abc.ABCMeta):
             teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
         else:
             single_results, teacher_qa_lists = self._load_ckpt()
+            logger.info(f"Resume at #{len(single_results)}")
 
         start = len(single_results)
 
-        from tqdm import tqdm
-        from rich.progress import track
-        # for i, test_case in track(enumerate(self.test_cases[:times]), total=times):
-        # for i, test_case in tqdm(enumerate(self.test_cases[start: times]), total=times):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
@@ -268,7 +265,11 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         if self.save_period >= 0:
             self._save_ckpt(full_result, "results_final.pkl")
-            json.dumps(osp.join(self.output_dir, full_result), cls=InvalidEncoder)
+            json.dump(
+                full_result,
+                open(osp.join(self.output_dir, "results_final.json"), mode="w"),
+                cls=InvalidEncoder
+            )
 
         return metric, full_result
 
