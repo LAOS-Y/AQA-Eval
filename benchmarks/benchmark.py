@@ -1,12 +1,17 @@
 import abc
 from loguru import logger
 import json
+import os.path as osp
+import pickle as pkl
 
-from utils import DialogLogger, dict_mean
+from utils import DialogLogger, dict_mean, InvalidEncoder, setup_logger
 
 
 class Benchmark(metaclass=abc.ABCMeta):
-    def __init__(self, format_tolerant=True, max_retry=0, max_step=None):
+    def __init__(
+            self, format_tolerant=True, max_retry=0, max_step=None,
+            verbose=True, output_dir=None, save_period=-1
+        ):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
@@ -14,8 +19,16 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.max_step = max_step
 
         self.teacher = None
-        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"])
+        self.dialog_logger = DialogLogger(order=["System", "Q", "A", "T"], enabled=verbose)
         self.test_cases = []
+        self.output_dir = output_dir
+        setup_logger(output=output_dir)
+
+        # `self.save_period > 0`: save every `self.save_period` test cases
+        # `self.save_period == 0`: only save the final result
+        # `self.save_period < 0`: dont save results at all
+        self.save_period = save_period
+        assert self.save_period < 0 or self.output_dir is not None
 
     def load_testcases_from_file(self, path):
         self.test_cases = json.load(open(path))
@@ -76,8 +89,9 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return result
 
-    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+    def _pack_results(self, single_results, teacher_forcing_mode):
         # summarize the metrics from each test run and pack the detailed results
+        metrics = [result["metric"] for result in single_results]
         metric = dict_mean(metrics)
 
         metric = {"mean_" + k: v for k, v in metric.items()}
@@ -188,15 +202,38 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return teacher_qa_lists
 
-    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False):
+    def _save_ckpt(self, ckpt, filename):
+        pkl.dump(ckpt, open(osp.join(self.output_dir, filename), mode="wb"))
+        with open(osp.join(self.output_dir, "last_checkpoint"), mode="w") as f:
+            f.write(filename)
+
+    def _load_ckpt(self):
+        with open(osp.join(self.output_dir, "last_checkpoint"), mode="r") as f:
+            filename = f.readline()
+
+        ckpt = pkl.load(open(osp.join(self.output_dir, filename), mode="rb"))
+        # TODO: if the evaluation is finished, there will be no need for `teacher_qa_lists`
+        if filename == "results_final.pkl":
+            return ckpt, []
+
+        return ckpt["single_results"], ckpt["teacher_qa_lists"]
+
+    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False, resume=False):
         assert times <= len(self.test_cases), self.test_cases
         assert num_examples <= len(self.test_cases), self.test_cases
 
-        teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
-        metrics = []
-        single_results = []
+        if not resume:
+            single_results = []
+            teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
+        else:
+            single_results, teacher_qa_lists = self._load_ckpt()
+            logger.info(f"Resume at #{len(single_results)}")
 
-        for test_case in self.test_cases[:times]:
+        start = len(single_results)
+
+        for i, test_case in enumerate(self.test_cases[start: times]):
+            i += start + 1
+
             instruction_w_examples = self._add_examples(
                 self.default_instruction, teacher_qa_lists, model.rebuild_context
             )
@@ -205,6 +242,7 @@ class Benchmark(metaclass=abc.ABCMeta):
                 instruction=instruction_w_examples,
                 test_case=test_case
             )
+            logger.info(f"Evaluation metric #{i}: {metric}")
 
             if num_examples:
                 teacher_qa_lists = teacher_qa_lists[1:]
@@ -213,10 +251,27 @@ class Benchmark(metaclass=abc.ABCMeta):
                     # single_result["history"]["teacher_history"] = deepcopy(self._teacher_qa_list)
                 teacher_qa_lists.append(self._teacher_qa_list)
 
-            metrics.append(metric)
             single_results.append(single_result)
 
-        return self._pack_results(metrics, single_results, teacher_forcing_mode=teacher_forcing)
+            if self.save_period > 0 and not i % self.save_period:
+                self._save_ckpt(
+                    {"single_results": single_results, "teacher_qa_lists": teacher_qa_lists},
+                    f"ckpt_{i}.pkl"
+                )
+
+        metric, full_result = self._pack_results(
+            single_results, teacher_forcing_mode=teacher_forcing
+        )
+
+        if self.save_period >= 0:
+            self._save_ckpt(full_result, "results_final.pkl")
+            json.dump(
+                full_result,
+                open(osp.join(self.output_dir, "results_final.json"), mode="w"),
+                cls=InvalidEncoder
+            )
+
+        return metric, full_result
 
     @property
     @abc.abstractmethod

@@ -9,8 +9,14 @@ from .benchmark import Benchmark
 
 
 class BinarySearchEvaluator(Benchmark):
-    def __init__(self, min=0, max=100, format_tolerant=True, max_retry=0, max_step=None):
-        super(BinarySearchEvaluator, self).__init__(format_tolerant, max_retry, max_step)
+    def __init__(
+        self, min=0, max=100,
+        format_tolerant=True, max_retry=0, max_step=None,
+        verbose=True, output_dir=None, save_period=-1
+    ):
+        super(BinarySearchEvaluator, self).__init__(
+            format_tolerant, max_retry, max_step, verbose, output_dir, save_period
+        )
         assert min <= max
         self.min = min
         self.max = max
@@ -201,7 +207,7 @@ class BinarySearchEvaluator(Benchmark):
             model, teacher_forcing, instruction, test_case
         )
 
-        logger.info("Picked Random Number: {}".format(self._target))
+        logger.info("Target number: {}".format(self._target))
 
         if teacher_forcing:
             answer_list, teacher_answer_list = self._test_tf(model)
@@ -236,9 +242,9 @@ class BinarySearchEvaluator(Benchmark):
 
         return result
 
-    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+    def _pack_results(self, single_results, teacher_forcing_mode):
         metric, full_result = super(BinarySearchEvaluator, self)._pack_results(
-            metrics, single_results, teacher_forcing_mode
+            single_results, teacher_forcing_mode
         )
 
         full_result["env"]["min"] = self.min

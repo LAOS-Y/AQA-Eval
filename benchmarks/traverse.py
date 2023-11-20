@@ -11,9 +11,12 @@ from .benchmark import Benchmark
 class TraverseGraphEvaluator(Benchmark):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
-        format_tolerant=True, max_retry=0, max_step=None
+        format_tolerant=True, max_retry=0, max_step=None,
+        verbose=True, output_dir=None, save_period=-1
     ):
-        super(TraverseGraphEvaluator, self).__init__(format_tolerant, max_retry, max_step)
+        super(TraverseGraphEvaluator, self).__init__(
+            format_tolerant, max_retry, max_step, verbose, output_dir, save_period
+        )
         self.node_num = node_num
         self.explain_algo = explain_algo
         self.mcq = mcq
@@ -193,7 +196,6 @@ class TraverseGraphEvaluator(Benchmark):
 
     def calc_metric_tf(self, node_history, teacher_node_history):
         assert len(node_history) > 0
-        assert node_history[0] != self._start_node
 
         decov_list = [self._calc_decoverage([self._start_node])]
         cnt = 0
@@ -369,9 +371,9 @@ class TraverseGraphEvaluator(Benchmark):
 
         return result
 
-    def _pack_results(self, metrics, single_results, teacher_forcing_mode):
+    def _pack_results(self, single_results, teacher_forcing_mode):
         metrics, full_result = super(TraverseGraphEvaluator, self)._pack_results(
-            metrics, single_results, teacher_forcing_mode
+            single_results, teacher_forcing_mode
         )
 
         full_result["env"].update(dict(
