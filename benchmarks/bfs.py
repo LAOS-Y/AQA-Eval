@@ -25,11 +25,12 @@ class BFSEvaluator(TraverseGraphEvaluator):
                       "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
                       "You can only visit nodes that are adjacent to the already visited nodes. " \
                       "You can only reply with a integer number indicating which node to be visited next. " \
-                      "Please traverse the entire graph in as few rounds as possible." \
-                      "Initially, you have already visited node 0." \
+                      "Don't explain your answer. " \
+                      "Try traverse the entire graph in as few rounds as possible." \
+                      "You are currently on the node 0." \
 
         if self.explain_algo:
-            instruction += "You should use breadth first search algorithm. " \
+            instruction += "\nYou should use breadth first search algorithm. " \
                            "The algorithm works as follows:\n" \
                            "1. Initialize a queue data structure and add the starting node to the queue.\n" \
                            "2. While the queue is not empty, visit the first node and remove it from the queue.\n" \
@@ -48,6 +49,15 @@ class BFSEvaluator(TraverseGraphEvaluator):
         assert self._start_node in valid_nodes
 
         return valid_nodes
+
+    def _get_prompt_when_invalid(self, valid_nodes):
+        prompt = "Invalid reply. Try again. You can only reply with a " \
+                 "integer number indicting the node adjacent to the visited node."
+        if self.mcq:
+            valid_nodes = [str(node) for node in valid_nodes]
+            prompt += " Valid nodes: {}.".format(", ".join(valid_nodes))
+
+        return prompt
 
     def _init_queues(self):
         return self._get_adj_nodes(self._start_node), []
