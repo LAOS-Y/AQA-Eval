@@ -113,7 +113,9 @@ class BinarySearchEvaluator(Benchmark):
             "avg_err": sum(err_list) / len(err_list),
             "sum_err": sum(err_list),
             "min_err": min(err_list),
+            "acc": sum([err == 0 for err in err_list]) / len(err_list)
         }
+
         return metrics
 
     def calc_metric_no_tf(self, answer_list, target_list):
