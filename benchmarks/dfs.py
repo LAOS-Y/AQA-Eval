@@ -25,7 +25,8 @@ class DFSEvaluator(TraverseGraphEvaluator):
                       "All edges are undirected, so that you can move from one node to the other connected by the edge in either direction. " \
                       "Every time you visit a node, you will be given the adjacent nodes connected to this node. " \
                       "You can only reply with a integer number indicating which node to be visited next. " \
-                      "Try moving as few times as you can. " \
+                      "Don't explain your answer. " \
+                      "Try traverse the entire graph in as few rounds as possible." \
                       "You are currently on the node 0." \
 
         if self.explain_algo:
@@ -38,6 +39,15 @@ class DFSEvaluator(TraverseGraphEvaluator):
 
     def _get_valid_nodes(self, next_node, visited_nodes):
         return set(self._get_adj_nodes(next_node))
+
+    def _get_prompt_when_invalid(self, valid_nodes):
+        prompt = "Invalid reply. Try again. You can only reply with a " \
+                 "integer number indicting the node adjacent to the current node."
+        if self.mcq:
+            valid_nodes = [str(node) for node in valid_nodes]
+            prompt += " Valid nodes: {}.".format(", ".join(valid_nodes))
+
+        return prompt
 
     def _init_stack(self):
         return [self._start_node]

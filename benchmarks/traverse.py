@@ -7,7 +7,7 @@ from utils import Invalid, FormatInvalid, ValueInvalid
 from .benchmark import Benchmark
 
 
-# TODO: refine or just remove mcq and provide_state
+# TODO: refine or just remove provide_state
 class TraverseGraphEvaluator(Benchmark):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
@@ -72,10 +72,14 @@ class TraverseGraphEvaluator(Benchmark):
                           .format(", ".join([str(i) for i in unvisited_adj_nodes]))
         if self.mcq:
             valid_nodes = self._get_valid_nodes(next_node, visited_nodes)
+            valid_nodes = [str(node) for node in valid_nodes]
 
-            prompt += " Choose the next node to visit: {}.".format(", ".join(valid_nodes))
+            prompt += " Valid nodes: {}.".format(", ".join(valid_nodes))
 
         return prompt
+
+    def _get_prompt_when_invalid(self, valid_nodes):
+        raise NotImplementedError
 
     def _refresh_teacher_qa(self):
         super(TraverseGraphEvaluator, self)._refresh_teacher_qa()
@@ -285,9 +289,7 @@ class TraverseGraphEvaluator(Benchmark):
                 continue
 
             if retry_cnt == 0:
-                # TODO: maybe add mcq here?
-                prompt = "Invalid reply. Try again. You can only reply with a " \
-                         "integer number."
+                prompt = self._get_prompt_when_invalid(valid_nodes)
 
             retry_cnt += 1
 
