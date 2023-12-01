@@ -49,6 +49,10 @@ class Llama():
 
         return context
 
+    def add_history(self, qa_lists):
+        for qa_list in qa_lists:
+            self.history += qa_list
+
     def revoke(self, n=1):
         assert 0 <= n and n <= len(self.history)
         self.history = self.history[:-n]
