@@ -204,9 +204,9 @@ class BinarySearchEvaluator(Benchmark):
 
         return answer_list, teacher_answer_list
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
         super(BinarySearchEvaluator, self).naive_test(
-            model, teacher_forcing, instruction, test_case
+            model, teacher_forcing, instruction, test_case, example_qa_lists
         )
 
         logger.info("Target number: {}".format(self._target))

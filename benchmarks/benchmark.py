@@ -50,10 +50,12 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         model.reset(instruction)
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
         self.reset(test_case)
         # will use `self.default_instruction` if `instruction` is None
         self.reset_model(model, instruction)
+        if example_qa_lists is not None:
+            model.add_history(example_qa_lists)
 
     def _refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
@@ -190,6 +192,14 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return instruction_w_examples
 
+    def _preprocess_examples(self, qa_lists):
+        example_qa_lists = []
+        for qa_list in qa_lists:
+            example_qa_list = [(q, str(a) if a is not None else "") for q, a in qa_list]
+            example_qa_lists.append(example_qa_list)
+
+        return example_qa_lists
+
     def _init_teacher_qa_lists(self, num_examples):
         if not num_examples:
             return []
@@ -234,13 +244,12 @@ class Benchmark(metaclass=abc.ABCMeta):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
-            instruction_w_examples = self._add_examples(
-                self.default_instruction, teacher_qa_lists, model.rebuild_context
-            )
+            example_qa_lists = self._preprocess_examples(teacher_qa_lists)
             metric, single_result = self.naive_test(
                 model, teacher_forcing,
-                instruction=instruction_w_examples,
-                test_case=test_case
+                instruction=self.default_instruction,
+                test_case=test_case,
+                example_qa_lists=example_qa_lists
             )
             logger.info(f"Evaluation metric #{i}: {metric}")
 

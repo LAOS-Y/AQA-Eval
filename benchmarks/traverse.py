@@ -332,9 +332,9 @@ class TraverseGraphEvaluator(Benchmark):
 
         return node_history, teacher_node_history, optim_decov_sum
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
         super(TraverseGraphEvaluator, self).naive_test(
-            model, teacher_forcing, instruction, test_case
+            model, teacher_forcing, instruction, test_case, example_qa_lists
         )
 
         if teacher_forcing:
