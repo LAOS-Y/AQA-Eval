@@ -124,6 +124,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return metric, full_result
 
+    # TODO: Deprecated
     def _independent_test(self, model, times, teacher_forcing_mode):
         teacher_forcing = teacher_forcing_mode == "l1"
 
@@ -138,6 +139,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return self._pack_results(metrics, single_results, teacher_forcing_mode)
 
+    # TODO: Deprecated
     def _context_kept_test(self, model, times, teacher_forcing_mode):
         # model's history will be cleared before each run
         # teacher model's history will be used as example in the intruction prompt
