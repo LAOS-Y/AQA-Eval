@@ -39,23 +39,38 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.teacher.reset()
         self._teacher_qa_list = []
 
-    def reset_model(self, model, instruction=None, verbose=True):
+    def reset_model(self, model, instruction=None, example_qa_lists=None, verbose=True):
         # clear dialog history and give instruction
         # will use `self.default_instruction` if `instruction` is None
         if instruction is None:
             instruction = self.default_instruction
 
+        model.reset(instruction)
         if verbose:
             self.dialog_logger.info(System=instruction)
 
-        model.reset(instruction)
+        if example_qa_lists is not None:
+            example_qa_lists = self._preprocess_examples(example_qa_lists)
+            model.add_history(example_qa_lists)
+            if verbose:
+                for qa_list in example_qa_lists:
+                    for q, a in qa_list:
+                        self.dialog_logger.info(Q=q)
+                        self.dialog_logger.info(A=a)
+
+
+    def _preprocess_examples(self, qa_lists):
+        example_qa_lists = []
+        for qa_list in qa_lists:
+            example_qa_list = [(q, str(a) if a is not None else "") for q, a in qa_list]
+            example_qa_lists.append(example_qa_list)
+
+        return example_qa_lists
 
     def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
         self.reset(test_case)
         # will use `self.default_instruction` if `instruction` is None
-        self.reset_model(model, instruction)
-        if example_qa_lists is not None:
-            model.add_history(example_qa_lists)
+        self.reset_model(model, instruction, example_qa_lists)
 
     def _refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
@@ -192,14 +207,6 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return instruction_w_examples
 
-    def _preprocess_examples(self, qa_lists):
-        example_qa_lists = []
-        for qa_list in qa_lists:
-            example_qa_list = [(q, str(a) if a is not None else "") for q, a in qa_list]
-            example_qa_lists.append(example_qa_list)
-
-        return example_qa_lists
-
     def _init_teacher_qa_lists(self, num_examples):
         if not num_examples:
             return []
@@ -244,12 +251,11 @@ class Benchmark(metaclass=abc.ABCMeta):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
-            example_qa_lists = self._preprocess_examples(teacher_qa_lists)
             metric, single_result = self.naive_test(
                 model, teacher_forcing,
                 instruction=self.default_instruction,
                 test_case=test_case,
-                example_qa_lists=example_qa_lists
+                example_qa_lists=teacher_qa_lists
             )
             logger.info(f"Evaluation metric #{i}: {metric}")
 
