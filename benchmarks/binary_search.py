@@ -103,6 +103,7 @@ class BinarySearchEvaluator(Benchmark):
                 "avg_err": 1.0,
                 "sum_err": 1.0,
                 "min_err": 1.0,
+                "acc": 0.0
             }
 
         err_list = [
