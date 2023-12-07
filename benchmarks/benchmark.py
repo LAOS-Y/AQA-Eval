@@ -39,21 +39,38 @@ class Benchmark(metaclass=abc.ABCMeta):
         self.teacher.reset()
         self._teacher_qa_list = []
 
-    def reset_model(self, model, instruction=None, verbose=True):
+    def reset_model(self, model, instruction=None, example_qa_lists=None, verbose=True):
         # clear dialog history and give instruction
         # will use `self.default_instruction` if `instruction` is None
         if instruction is None:
             instruction = self.default_instruction
 
+        model.reset(instruction)
         if verbose:
             self.dialog_logger.info(System=instruction)
 
-        model.reset(instruction)
+        if example_qa_lists is not None:
+            example_qa_lists = self._preprocess_examples(example_qa_lists)
+            model.add_history(example_qa_lists)
+            if verbose:
+                for qa_list in example_qa_lists:
+                    for q, a in qa_list:
+                        self.dialog_logger.info(Q=q)
+                        self.dialog_logger.info(A=a)
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None):
+
+    def _preprocess_examples(self, qa_lists):
+        example_qa_lists = []
+        for qa_list in qa_lists:
+            example_qa_list = [(q, str(a) if a is not None else "") for q, a in qa_list]
+            example_qa_lists.append(example_qa_list)
+
+        return example_qa_lists
+
+    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
         self.reset(test_case)
         # will use `self.default_instruction` if `instruction` is None
-        self.reset_model(model, instruction)
+        self.reset_model(model, instruction, example_qa_lists)
 
     def _refresh_teacher_qa(self):
         # teacher always recieve a fresh initial prompt without previous context
@@ -64,14 +81,6 @@ class Benchmark(metaclass=abc.ABCMeta):
         self, metric, answer_list, teacher_answer_list,
         model_history, teacher_forcing, instruction=None
     ):
-        assert teacher_forcing or len(teacher_answer_list) == 0, \
-            "`teacher_answer_list` must be empty when teacher forcing is disabled.\n" \
-            f"teacher_answer_list={teacher_answer_list}"
-
-        assert teacher_forcing or len(self._teacher_qa_list) == 0, \
-            "`self._teacher_qa_list` must be empty when teacher forcing is disabled.\n" \
-            f"self._teacher_qa_list={self._teacher_qa_list}"
-
         result = {}
         result["metric"] = metric
         result["output"] = dict(
@@ -107,6 +116,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return metric, full_result
 
+    # TODO: Deprecated
     def _independent_test(self, model, times, teacher_forcing_mode):
         teacher_forcing = teacher_forcing_mode == "l1"
 
@@ -121,6 +131,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return self._pack_results(metrics, single_results, teacher_forcing_mode)
 
+    # TODO: Deprecated
     def _context_kept_test(self, model, times, teacher_forcing_mode):
         # model's history will be cleared before each run
         # teacher model's history will be used as example in the intruction prompt
@@ -203,6 +214,8 @@ class Benchmark(metaclass=abc.ABCMeta):
         return teacher_qa_lists
 
     def _save_ckpt(self, ckpt, filename):
+        logger.info("Saving ckpt to {}".format(osp.join(self.output_dir, filename)))
+
         pkl.dump(ckpt, open(osp.join(self.output_dir, filename), mode="wb"))
         with open(osp.join(self.output_dir, "last_checkpoint"), mode="w") as f:
             f.write(filename)
@@ -210,6 +223,8 @@ class Benchmark(metaclass=abc.ABCMeta):
     def _load_ckpt(self):
         with open(osp.join(self.output_dir, "last_checkpoint"), mode="r") as f:
             filename = f.readline()
+
+        logger.info("Loading ckpt from {}".format(osp.join(self.output_dir, filename)))
 
         ckpt = pkl.load(open(osp.join(self.output_dir, filename), mode="rb"))
         # TODO: if the evaluation is finished, there will be no need for `teacher_qa_lists`
@@ -234,13 +249,11 @@ class Benchmark(metaclass=abc.ABCMeta):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
-            instruction_w_examples = self._add_examples(
-                self.default_instruction, teacher_qa_lists, model.rebuild_context
-            )
             metric, single_result = self.naive_test(
                 model, teacher_forcing,
-                instruction=instruction_w_examples,
-                test_case=test_case
+                instruction=self.default_instruction,
+                test_case=test_case,
+                example_qa_lists=teacher_qa_lists
             )
             logger.info(f"Evaluation metric #{i}: {metric}")
 
@@ -265,6 +278,8 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         if self.save_period >= 0:
             self._save_ckpt(full_result, "results_final.pkl")
+
+            logger.info("Saving json to {}".format(osp.join(self.output_dir, "results_final.json")))
             json.dump(
                 full_result,
                 open(osp.join(self.output_dir, "results_final.json"), mode="w"),

@@ -33,14 +33,6 @@ class ChatGPT():
 
         return result
 
-    def revoke(self, n=1):
-        assert 0 <= n and n <= len(self.history)
-        self.history = self.history[:-n]
-
-    def force(self, new_reply):
-        self.messages[-1]["content"] = new_reply
-        self.history[-1] = (self.history[-1][0], new_reply, *self.history[-1][1:])
-
     def rebuild_context(self, qa_list):
         context = ""
         for qa in qa_list:
@@ -51,3 +43,15 @@ class ChatGPT():
                 context += f"assistant: {a}\n\n"
 
         return context
+
+    def add_history(self, qa_lists):
+        for qa_list in qa_lists:
+            self.history += qa_list
+
+    def revoke(self, n=1):
+        assert 0 <= n and n <= len(self.history)
+        self.history = self.history[:-n]
+
+    def force(self, new_reply):
+        self.messages[-1]["content"] = new_reply
+        self.history[-1] = (self.history[-1][0], new_reply, *self.history[-1][1:])
