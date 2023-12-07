@@ -214,6 +214,8 @@ class Benchmark(metaclass=abc.ABCMeta):
         return teacher_qa_lists
 
     def _save_ckpt(self, ckpt, filename):
+        logger.info("Saving ckpt to {}".format(osp.join(self.output_dir, filename)))
+
         pkl.dump(ckpt, open(osp.join(self.output_dir, filename), mode="wb"))
         with open(osp.join(self.output_dir, "last_checkpoint"), mode="w") as f:
             f.write(filename)
@@ -221,6 +223,8 @@ class Benchmark(metaclass=abc.ABCMeta):
     def _load_ckpt(self):
         with open(osp.join(self.output_dir, "last_checkpoint"), mode="r") as f:
             filename = f.readline()
+
+        logger.info("Loading ckpt from {}".format(osp.join(self.output_dir, filename)))
 
         ckpt = pkl.load(open(osp.join(self.output_dir, filename), mode="rb"))
         # TODO: if the evaluation is finished, there will be no need for `teacher_qa_lists`
@@ -274,6 +278,8 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         if self.save_period >= 0:
             self._save_ckpt(full_result, "results_final.pkl")
+
+            logger.info("Saving json to {}".format(osp.join(self.output_dir, "results_final.json")))
             json.dump(
                 full_result,
                 open(osp.join(self.output_dir, "results_final.json"), mode="w"),
