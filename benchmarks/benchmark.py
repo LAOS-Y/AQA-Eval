@@ -81,14 +81,6 @@ class Benchmark(metaclass=abc.ABCMeta):
         self, metric, answer_list, teacher_answer_list,
         model_history, teacher_forcing, instruction=None
     ):
-        assert teacher_forcing or len(teacher_answer_list) == 0, \
-            "`teacher_answer_list` must be empty when teacher forcing is disabled.\n" \
-            f"teacher_answer_list={teacher_answer_list}"
-
-        assert teacher_forcing or len(self._teacher_qa_list) == 0, \
-            "`self._teacher_qa_list` must be empty when teacher forcing is disabled.\n" \
-            f"self._teacher_qa_list={self._teacher_qa_list}"
-
         result = {}
         result["metric"] = metric
         result["output"] = dict(

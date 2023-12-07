@@ -96,8 +96,9 @@ class BinarySearchEvaluator(Benchmark):
         target = int(target)
         return abs(guess - target) / (self.max - self.min)
 
-    def calc_metric_tf(self, answer_list, target_list):
-        # calculate all the metrics given a list of guesses and targets
+    def calc_metric_tf(self, answer_list, teacher_answer_list):
+        assert len(answer_list) ==len(teacher_answer_list)
+
         if not len(answer_list):
             return {
                 "avg_err": 1.0,
@@ -107,25 +108,50 @@ class BinarySearchEvaluator(Benchmark):
             }
 
         err_list = [
-            self._calc_err(i, j) for i, j in zip(answer_list, target_list)
+            self._calc_err(answer, self._target) for answer in answer_list
         ]
 
         metrics = {
             "avg_err": sum(err_list) / len(err_list),
             "sum_err": sum(err_list),
             "min_err": min(err_list),
-            "acc": sum([err == 0 for err in err_list]) / len(err_list)
         }
+
+        metrics["acc"] = sum(
+            [
+                answer == teacher_answer
+                for answer, teacher_answer in zip(answer_list, teacher_answer_list)
+            ]
+        ) / len(answer_list)
 
         return metrics
 
-    def calc_metric_no_tf(self, answer_list, target_list):
-        # Since we are interested in how close the model gets to the target number before
-        # it quits, the final invalid guess is removed when calculating metrics
-        if isinstance(answer_list[-1], Invalid):
-            answer_list = answer_list[:-1]
+    def calc_metric_no_tf(self, answer_list, teacher_answer_list):
+        if not len(answer_list):
+            return {
+                "avg_err": 1.0,
+                "sum_err": 1.0,
+                "min_err": 1.0,
+                "acc": 0.0
+            }
 
-        return self.calc_metric_tf(answer_list, target_list)
+        err_list = [
+            self._calc_err(answer, self._target) for answer in answer_list
+        ]
+
+        metrics = {
+            "avg_err": sum(err_list) / len(err_list),
+            "sum_err": sum(err_list),
+            "min_err": min(err_list),
+        }
+
+        i = 0
+        for i, (answer, teacher_answer) in enumerate(zip(answer_list, teacher_answer_list)):
+            if answer != teacher_answer:
+                break
+        metrics["acc"] = i / len(answer_list)
+
+        return metrics
 
     def _test_no_tf(self, model):
         # test one time without teacher forcing
@@ -166,7 +192,7 @@ class BinarySearchEvaluator(Benchmark):
 
             if retry_cnt == 0:
                 prompt = "Invalid reply. You can only reply with a integer number between " \
-                        f"{self.min} and {self.max}. Try again." + prompt
+                         f"{self.min} and {self.max}. Try again." + prompt
             retry_cnt += 1
 
         self.dialog_logger.info(Q=prompt)
@@ -216,11 +242,11 @@ class BinarySearchEvaluator(Benchmark):
             answer_list, teacher_answer_list = self._test_tf(model)
             metric = self.calc_metric_tf(answer_list, teacher_answer_list)
         else:
+            # bs benchmark without tf still needs teacher answers for acc calculation
             answer_list = self._test_no_tf(model)
-            teacher_answer_list = []
-
-            target_list = [self._target] * len(answer_list)
-            metric = self.calc_metric_no_tf(answer_list, target_list)
+            self._refresh_teacher_qa()
+            teacher_answer_list = [a for _, a in self._teacher_qa_list[:-1]]
+            metric = self.calc_metric_no_tf(answer_list, teacher_answer_list)
 
         result = self._get_result(
             metric, answer_list, teacher_answer_list,
