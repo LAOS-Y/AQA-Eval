@@ -11,13 +11,13 @@ from .build import BENCHMARKS
 
 
 @BENCHMARKS.register()
-class BinarySearchEvaluator(Benchmark):
+class BinarySearch(Benchmark):
     def __init__(
         self, min=0, max=100,
         format_tolerant=True, max_retry=0, max_step=None,
         verbose=True, output_dir=None, save_period=-1
     ):
-        super(BinarySearchEvaluator, self).__init__(
+        super(BinarySearch, self).__init__(
             format_tolerant, max_retry, max_step, verbose, output_dir, save_period
         )
         assert min <= max
@@ -26,7 +26,7 @@ class BinarySearchEvaluator(Benchmark):
         self.teacher = BSModel(min, max)
 
     def reset(self, test_case=None):
-        super(BinarySearchEvaluator, self).reset(test_case)
+        super(BinarySearch, self).reset(test_case)
 
         if test_case is None:
             logger.info("Generating random number.")
@@ -54,7 +54,7 @@ class BinarySearchEvaluator(Benchmark):
         return f"Right answer. The true number is equal to {guess}."
 
     def _refresh_teacher_qa(self):
-        super(BinarySearchEvaluator, self)._refresh_teacher_qa()
+        super(BinarySearch, self)._refresh_teacher_qa()
 
         guess = None
         prompt = "START"
@@ -235,7 +235,7 @@ class BinarySearchEvaluator(Benchmark):
         return answer_list, teacher_answer_list
 
     def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
-        super(BinarySearchEvaluator, self).naive_test(
+        super(BinarySearch, self).naive_test(
             model, teacher_forcing, instruction, test_case, example_qa_lists
         )
 
@@ -262,7 +262,7 @@ class BinarySearchEvaluator(Benchmark):
         self, metric, answer_list, teacher_answer_list,
         model_history, teacher_forcing, instruction=None
     ):
-        result = super(BinarySearchEvaluator, self)._get_result(
+        result = super(BinarySearch, self)._get_result(
             metric, answer_list, teacher_answer_list, model_history, teacher_forcing, instruction
         )
 
@@ -275,7 +275,7 @@ class BinarySearchEvaluator(Benchmark):
         return result
 
     def _pack_results(self, single_results, teacher_forcing_mode):
-        metric, full_result = super(BinarySearchEvaluator, self)._pack_results(
+        metric, full_result = super(BinarySearch, self)._pack_results(
             single_results, teacher_forcing_mode
         )
 

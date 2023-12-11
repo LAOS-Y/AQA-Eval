@@ -9,13 +9,13 @@ from .benchmark import Benchmark
 
 
 # TODO: refine or just remove provide_state
-class TraverseGraphEvaluator(Benchmark):
+class TraverseGraph(Benchmark):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,
         format_tolerant=True, max_retry=0, max_step=None,
         verbose=True, output_dir=None, save_period=-1
     ):
-        super(TraverseGraphEvaluator, self).__init__(
+        super(TraverseGraph, self).__init__(
             format_tolerant, max_retry, max_step, verbose, output_dir, save_period
         )
         self.node_num = node_num
@@ -26,7 +26,7 @@ class TraverseGraphEvaluator(Benchmark):
         # Set `self.teacher` here
 
     def reset(self, test_case=None):
-        super(TraverseGraphEvaluator, self).reset(test_case)
+        super(TraverseGraph, self).reset(test_case)
 
         # TODO: maybe choose random node as the starting node
         self._start_node = 0
@@ -83,7 +83,7 @@ class TraverseGraphEvaluator(Benchmark):
         raise NotImplementedError
 
     def _refresh_teacher_qa(self):
-        super(TraverseGraphEvaluator, self)._refresh_teacher_qa()
+        super(TraverseGraph, self)._refresh_teacher_qa()
 
         response = ""
         prompt = self._get_prompt(self._start_node, [])
@@ -334,7 +334,7 @@ class TraverseGraphEvaluator(Benchmark):
         return node_history, teacher_node_history, optim_decov_sum
 
     def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
-        super(TraverseGraphEvaluator, self).naive_test(
+        super(TraverseGraph, self).naive_test(
             model, teacher_forcing, instruction, test_case, example_qa_lists
         )
 
@@ -358,7 +358,7 @@ class TraverseGraphEvaluator(Benchmark):
         self, metric, answer_list, teacher_answer_list,
         model_history, teacher_forcing, instruction=None
     ):
-        result = super(TraverseGraphEvaluator, self)._get_result(
+        result = super(TraverseGraph, self)._get_result(
             metric, answer_list, teacher_answer_list, model_history, teacher_forcing, instruction
         )
 
@@ -375,7 +375,7 @@ class TraverseGraphEvaluator(Benchmark):
         return result
 
     def _pack_results(self, single_results, teacher_forcing_mode):
-        metrics, full_result = super(TraverseGraphEvaluator, self)._pack_results(
+        metrics, full_result = super(TraverseGraph, self)._pack_results(
             single_results, teacher_forcing_mode
         )
 
