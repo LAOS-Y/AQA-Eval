@@ -17,7 +17,9 @@ class Registry():
 
                 if name is None:
                     name = func_or_cls.__name__
+
                 self._do_register(name, func_or_cls)
+                return func_or_cls
 
             return decorator
 
