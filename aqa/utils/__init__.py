@@ -1,4 +1,3 @@
-from .config import Config
 from .dict_boardcast import dict_mean, dict_sum, dict_max, dict_min
 from .dialog_logger import DialogLogger
 from .eval import eval
