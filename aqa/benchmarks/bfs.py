@@ -1,7 +1,8 @@
 from copy import deepcopy
 
-from models import BFSModel
-from utils import Invalid
+from aqa.models import BFSModel
+from aqa.utils import Invalid
+
 from .traverse import TraverseGraphEvaluator
 
 

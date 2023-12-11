@@ -3,7 +3,8 @@ import re
 
 from loguru import logger
 
-from utils import Invalid, FormatInvalid, ValueInvalid
+from aqa.utils import Invalid, FormatInvalid, ValueInvalid
+
 from .benchmark import Benchmark
 
 

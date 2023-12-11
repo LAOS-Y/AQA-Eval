@@ -4,7 +4,7 @@ import json
 import os.path as osp
 import pickle as pkl
 
-from utils import DialogLogger, dict_mean, InvalidEncoder, setup_logger
+from aqa.utils import DialogLogger, dict_mean, InvalidEncoder, setup_logger
 
 
 class Benchmark(metaclass=abc.ABCMeta):

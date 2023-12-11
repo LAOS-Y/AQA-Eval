@@ -3,8 +3,9 @@ import re
 
 from loguru import logger
 
-from models import BSModel
-from utils import Invalid, FormatInvalid, ValueInvalid
+from aqa.models import BSModel
+from aqa.utils import Invalid, FormatInvalid, ValueInvalid
+
 from .benchmark import Benchmark
 
 
