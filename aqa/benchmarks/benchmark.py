@@ -59,7 +59,6 @@ class Benchmark(metaclass=abc.ABCMeta):
                         self.dialog_logger.info(Q=q)
                         self.dialog_logger.info(A=a)
 
-
     def _preprocess_examples(self, qa_lists):
         example_qa_lists = []
         for qa_list in qa_lists:
@@ -286,6 +285,8 @@ class Benchmark(metaclass=abc.ABCMeta):
                 open(osp.join(self.output_dir, "results_final.json"), mode="w"),
                 cls=InvalidEncoder
             )
+
+        logger.info(f"Final metrics: {metric}")
 
         return metric, full_result
 
