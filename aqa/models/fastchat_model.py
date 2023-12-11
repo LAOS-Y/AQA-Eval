@@ -15,6 +15,10 @@ from fastchat.modules.exllama import ExllamaConfig
 from fastchat.modules.xfastertransformer import XftConfig
 from fastchat.utils import get_context_length
 
+from .build import MODELS
+
+
+@MODELS.register()
 class FastChatModel():
     def __init__(
         self,

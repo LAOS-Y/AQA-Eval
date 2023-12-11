@@ -1,10 +1,13 @@
 import openai
 import time
 
+from .build import MODELS
+
+
 openai.api_key = ""
 openai.api_base = "your_api_base_url"
 
-
+@MODELS.register()
 class ChatGPT():
     def __init__(self, model_name, sleep_sec=0.5):
         self.model_name = model_name

@@ -1,6 +1,9 @@
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
+from .build import MODELS
 
+
+@MODELS.register()
 class Llama():
     def __init__(self, tokenizer_path, model_path):
         self.tokenizer = LlamaTokenizer.from_pretrained(tokenizer_path)
