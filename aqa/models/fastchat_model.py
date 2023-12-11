@@ -2,7 +2,7 @@ from typing import Optional
 
 import torch
 
-from fastchat.conversation import get_conv_template, SeparatorStyle
+from fastchat.conversation import get_conv_template
 from fastchat.model.model_adapter import (
     load_model,
     get_conversation_template,
@@ -43,7 +43,7 @@ class FastChatModel():
         self.model_path = model_path
         self.conv_system_msg = conv_system_msg
         self.device = device
-        self.temperature =temperature
+        self.temperature = temperature
         self.max_new_tokens = max_new_tokens
         self.judge_sent_end = judge_sent_end
 
@@ -137,7 +137,7 @@ class FastChatModel():
             for q, a in qa_list:
                 self.conv.append_message(self.conv.roles[0], q)
                 self.conv.append_message(self.conv.roles[1], a)
-                
+
     def revoke(self, n=1):
         assert 0 <= n and n <= len(self.history)
         self.history = self.history[:-n]
