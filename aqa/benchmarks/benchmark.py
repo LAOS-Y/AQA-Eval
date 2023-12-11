@@ -11,7 +11,7 @@ class Benchmark(metaclass=abc.ABCMeta):
     def __init__(
             self, format_tolerant=True, max_retry=0, max_step=None,
             verbose=True, output_dir=None, save_period=-1
-        ):
+    ):
         self.format_tolerant = format_tolerant
         # `max_retry` and `max_step` are only activated when not teacher forcing
         self.max_retry = max_retry
@@ -31,6 +31,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         assert self.save_period < 0 or self.output_dir is not None
 
     def load_testcases_from_file(self, path):
+        logger.info(f"loading testcases from {path}")
         self.test_cases = json.load(open(path))
         assert isinstance(self.test_cases, list), self.test_cases
 
