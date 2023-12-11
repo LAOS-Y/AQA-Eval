@@ -3,9 +3,11 @@ from copy import deepcopy
 from aqa.models import BFSModel
 from aqa.utils import Invalid
 
+from .build import BENCHMARKS
 from .traverse import TraverseGraphEvaluator
 
 
+@BENCHMARKS.register()
 class BFSEvaluator(TraverseGraphEvaluator):
     def __init__(
         self, node_num=4, explain_algo=True, mcq=False, provide_state=False,

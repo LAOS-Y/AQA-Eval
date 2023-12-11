@@ -7,8 +7,10 @@ from aqa.models import BSModel
 from aqa.utils import Invalid, FormatInvalid, ValueInvalid
 
 from .benchmark import Benchmark
+from .build import BENCHMARKS
 
 
+@BENCHMARKS.register()
 class BinarySearchEvaluator(Benchmark):
     def __init__(
         self, min=0, max=100,
@@ -98,7 +100,7 @@ class BinarySearchEvaluator(Benchmark):
         return abs(guess - target) / (self.max - self.min)
 
     def calc_metric_tf(self, answer_list, teacher_answer_list):
-        assert len(answer_list) ==len(teacher_answer_list)
+        assert len(answer_list) == len(teacher_answer_list)
 
         if not len(answer_list):
             return {
