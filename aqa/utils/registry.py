@@ -33,7 +33,7 @@ class Registry():
         assert name in self._objs, f"{name} not found. Current Registry: {self}"
 
         return self._objs[name]
-    
+
     def __contains__(self, name):
         return name in self._objs
 

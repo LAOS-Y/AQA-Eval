@@ -26,7 +26,7 @@ class Config(dict):
     def __setattr__(self, __name, __value):
         if isinstance(__value, (list, tuple)):
             __value = [self.__class__(**x) if isinstance(x, dict) else x
-                     for x in __value]
+                       for x in __value]
         elif isinstance(__value, dict):
             __value = self.__class__(**__value)
 
