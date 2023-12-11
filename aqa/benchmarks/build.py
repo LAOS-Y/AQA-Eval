@@ -8,10 +8,11 @@ BENCHMARKS = Registry("models")
 
 def build_benchmark(config):
     config = deepcopy(config.BENCHMARK)
-    model_cls = BENCHMARKS[config.NAME]
+    benchmark_cls = BENCHMARKS[config.pop("NAME")]
+    dataset_file = BENCHMARKS[config.pop("DATASET_FILE")]
 
-    config.pop("NAME")
     config = EasyDict({k.lower(): v for k, v in config.items()})
-    model = model_cls(**config)
+    benchmark = benchmark_cls(**config)
+    benchmark.load_testcases_from_file(dataset_file)
 
-    return model
+    return benchmark
