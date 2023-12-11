@@ -1,8 +1,8 @@
-from aqa.benchmarks import build_benchmark
-from aqa.models import build_model
-
-
 def eval(config):
+    # to avoid circular imports
+    from aqa.benchmarks import build_benchmark
+    from aqa.models import build_model
+
     benchmark = build_benchmark(config)
     model = build_model(config)
 
