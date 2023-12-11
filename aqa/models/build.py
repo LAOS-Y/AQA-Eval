@@ -7,7 +7,7 @@ MODELS = Registry("models")
 
 
 def build_model(config):
-    config = deepcopy(config.MODELS)
+    config = deepcopy(config.MODEL)
     model_cls = MODELS[config.NAME]
 
     config.pop("NAME")
