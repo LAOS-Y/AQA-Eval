@@ -8,7 +8,7 @@ BASE_CONFIG = Config(
         TIMES=400,
         NUM_EXAMPLES=0,
         TEACHER_FORCING=False,
-        RESUME=False,
+        RESUME=True,
     ),
     MODEL=FASTCHAT_MODEL_CONFIG,
 )

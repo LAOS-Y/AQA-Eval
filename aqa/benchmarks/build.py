@@ -18,6 +18,11 @@ def build_benchmark(config):
     )
     dataset_file = osp.join(dataset_root, dataset_file)
 
+    exp_name = config.pop("EXP_NAME")
+    output_dir = config.pop("OUTPUT_DIR")
+    output_dir = osp.join(output_dir, exp_name)
+    config.OUTPUT_DIR = output_dir
+
     config = dict({k.lower(): v for k, v in config.items()})
     benchmark = benchmark_cls(**config)
     benchmark.load_testcases_from_file(dataset_file)
