@@ -213,6 +213,9 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return teacher_qa_lists
 
+    def _if_ckpt_exist(self):
+        return osp.exists(osp.join(self.output_dir, "last_checkpoint"))
+
     def _save_ckpt(self, ckpt, filename):
         logger.info("Saving ckpt to {}".format(osp.join(self.output_dir, filename)))
 
@@ -237,12 +240,12 @@ class Benchmark(metaclass=abc.ABCMeta):
         assert times <= len(self.test_cases), self.test_cases
         assert num_examples <= len(self.test_cases), self.test_cases
 
-        if not resume:
-            single_results = []
-            teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
-        else:
+        if resume and self._if_ckpt_exist():
             single_results, teacher_qa_lists = self._load_ckpt()
             logger.info(f"Resume at #{len(single_results)}")
+        else:
+            single_results = []
+            teacher_qa_lists = self._init_teacher_qa_lists(num_examples)
 
         start = len(single_results)
 
