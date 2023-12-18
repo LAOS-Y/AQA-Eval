@@ -20,7 +20,8 @@ def build_benchmark(config):
 
     exp_name = config.pop("EXP_NAME")
     output_dir = config.pop("OUTPUT_DIR")
-    output_dir = osp.join(output_dir, exp_name)
+    if exp_name is not None and output_dir is not None:
+        output_dir = osp.join(output_dir, exp_name)
     config.OUTPUT_DIR = output_dir
 
     config = dict({k.lower(): v for k, v in config.items()})
