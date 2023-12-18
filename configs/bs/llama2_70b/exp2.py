@@ -13,8 +13,8 @@ config.update(
         EXP_NAME=osp.splitext(osp.split(__file__)[1])[0],
         OUTPUT_DIR=osp.split(__file__)[0].replace("configs", "results", 1)
     ),
-    MODEL=models.VICUNA_V15_7B_16K_CONFIG,
+    MODEL=models.LLAMA2_70B_CONFIG,
     EVAL=dict(
-        NUM_EXAMPLES=3,
+        NUM_EXAMPLES=2,
     )
 )
