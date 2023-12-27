@@ -15,6 +15,7 @@ config.update(
     ),
     MODEL=models.LLAMA2_13B_CONFIG,
     EVAL=dict(
-        NUM_EXAMPLES=2,
+        NUM_EXAMPLES=0,
+        TEACHER_FORCING=True,
     )
 )

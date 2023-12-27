@@ -7,8 +7,8 @@ from aqa.configs.base_config import BASE_CONFIG
 config = deepcopy(BASE_CONFIG)
 config.update(
     BENCHMARK=dict(
-        benchmarks.BINARY_SEARCH_CONFIG,
-        DATASET_FILE="binary_search_0.json",
+        benchmarks.BFS_CONFIG,
+        DATASET_FILE="bfs_0.json",
         SAVE_PERIOD=25,
         EXP_NAME=osp.splitext(osp.split(__file__)[1])[0],
         OUTPUT_DIR=osp.split(__file__)[0].replace("configs", "results", 1)

@@ -9,7 +9,7 @@ config.update(
     BENCHMARK=dict(
         benchmarks.BINARY_SEARCH_CONFIG,
         DATASET_FILE="binary_search_0.json",
-        SAVE_PERIOD=50,
+        SAVE_PERIOD=25,
         EXP_NAME=osp.splitext(osp.split(__file__)[1])[0],
         OUTPUT_DIR=osp.split(__file__)[0].replace("configs", "results", 1)
     ),
