@@ -19,7 +19,7 @@ class Config(dict):
         for k in self.__class__.__dict__.keys():
             if (
                 not (k.startswith("__") and k.endswith("__"))
-                and k not in ["update", "update_not_recursive", "pop"]
+                and k not in ["update", "update_not_recursive", "pop", "update_from_list"]
             ):
                 setattr(self, k, getattr(self, k))
 
@@ -39,7 +39,7 @@ class Config(dict):
         __d = self.__class__(__map_or_iterable)
 
         for k, v in chain(__d.items(), kwargs.items()):
-            if isinstance(getattr(self, k, None), self.__class__):
+            if isinstance(getattr(self, k, None), self.__class__) and isinstance(v, dict):
                 getattr(self, k).update(v)
             else:
                 setattr(self, k, v)
@@ -56,3 +56,17 @@ class Config(dict):
 
     def __str__(self):
         return json.dumps(self, indent=" " * 4)
+
+    def update_from_list(self, items, auto_type_conversion=True):
+        for key, value in items:
+            single_keys = key.split(".")
+
+            obj = self
+            for single_key in single_keys[:-1]:
+                obj = obj[single_key]
+
+            if auto_type_conversion:
+                dtype = type(obj[single_keys[-1]])
+                value = dtype(value)
+
+            obj[single_keys[-1]] = value
