@@ -5,7 +5,7 @@ from .benchmark import BENCHMARK_BASE_CONFIG
 BFS_CONFIG = deepcopy(BENCHMARK_BASE_CONFIG)
 BFS_CONFIG.update(
     NAME="BFS",
-    NODE_NUM=8,
+    NODE_NUM=15,
     EXPLAIN_ALGO=True,
     MCQ=False,
     PROVIDE_STATE=False,
