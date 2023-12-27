@@ -127,7 +127,7 @@ class FastChatModel():
         output = list([i for i in output_stream])[-1]["text"].strip()
 
         self.conv.update_last_message(output)
-        self.history.append((prompt, output))
+        self.history.append((inp, output))
 
         return output
 
