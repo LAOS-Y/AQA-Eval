@@ -333,11 +333,7 @@ class TraverseGraph(Benchmark):
 
         return node_history, teacher_node_history, optim_decov_sum
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
-        super(TraverseGraph, self).naive_test(
-            model, teacher_forcing, instruction, test_case, example_qa_lists
-        )
-
+    def naive_test(self, model, teacher_forcing=False, instruction=None):
         if teacher_forcing:
             model_node_history, teacher_node_history, optim_decov_sum = self._test_tf(model)
             metric = self.calc_metric_tf(model_node_history, teacher_node_history)

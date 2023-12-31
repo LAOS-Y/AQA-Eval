@@ -234,11 +234,7 @@ class BinarySearch(Benchmark):
 
         return answer_list, teacher_answer_list
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
-        super(BinarySearch, self).naive_test(
-            model, teacher_forcing, instruction, test_case, example_qa_lists
-        )
-
+    def naive_test(self, model, teacher_forcing=False, instruction=None):
         logger.info("Target number: {}".format(self._target))
 
         if teacher_forcing:

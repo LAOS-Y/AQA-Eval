@@ -67,7 +67,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return example_qa_lists
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None, test_case=None, example_qa_lists=None):
+    def pre_each_test(self, model, instruction=None, test_case=None, example_qa_lists=None):
         self.reset(test_case)
         # will use `self.default_instruction` if `instruction` is None
         self.reset_model(model, instruction, example_qa_lists)
@@ -252,11 +252,15 @@ class Benchmark(metaclass=abc.ABCMeta):
         for i, test_case in enumerate(self.test_cases[start: times]):
             i += start + 1
 
-            metric, single_result = self.naive_test(
-                model, teacher_forcing,
+            self.pre_each_test(
+                model,
                 instruction=self.default_instruction,
                 test_case=test_case,
                 example_qa_lists=teacher_qa_lists
+            )
+
+            metric, single_result = self.naive_test(
+                model, teacher_forcing, self.default_instruction,
             )
             logger.info(f"Evaluation metric #{i}: {metric}")
 
@@ -325,4 +329,8 @@ class Benchmark(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def _test_tf(self, model):
+        pass
+
+    @abc.abstractmethod
+    def naive_test(self, model, teacher_forcing=False, instruction=None):
         pass
