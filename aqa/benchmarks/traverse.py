@@ -273,7 +273,7 @@ class TraverseGraph(Benchmark):
             # start processing response in this iteration
             next_node = self._extract_answer(reply, valid_nodes)
 
-            # if `reply` is formatted, force the new reply
+            # if `reply` is formatted in `_extract_answer`, force the new reply
             if not isinstance(next_node, FormatInvalid) \
                and str(getattr(next_node, "output", next_node)) != reply:
                 assert self.format_tolerant
@@ -281,18 +281,15 @@ class TraverseGraph(Benchmark):
                 logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
                 model.force(formatted)
 
-            if not isinstance(next_node, Invalid):
-                valid_nodes = self._get_valid_nodes(next_node, [self._start_node] + node_history)
-                prompt = self._get_prompt(next_node, [self._start_node] + node_history)
-                node_history.append(next_node)
-                retry_cnt = 0
-
+            if isinstance(next_node, Invalid):
+                prompt = self._get_prompt_when_invalid(valid_nodes)
+                retry_cnt += 1
                 continue
 
-            if retry_cnt == 0:
-                prompt = self._get_prompt_when_invalid(valid_nodes)
-
-            retry_cnt += 1
+            valid_nodes = self._get_valid_nodes(next_node, [self._start_node] + node_history)
+            prompt = self._get_prompt(next_node, [self._start_node] + node_history)
+            node_history.append(next_node)
+            retry_cnt = 0
 
         self.dialog_logger.info(Q=prompt)
 

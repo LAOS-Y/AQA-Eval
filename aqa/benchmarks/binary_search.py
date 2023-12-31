@@ -178,7 +178,7 @@ class BinarySearch(Benchmark):
 
             answer = self._extract_answer(reply)
 
-            # if `reply` is formatted, force the new reply
+            # if `reply` is formatted in `_extract_answer`, force the new reply
             if not isinstance(answer, FormatInvalid) \
                and str(getattr(answer, "output", answer)) != reply:
                 assert self.format_tolerant
@@ -187,16 +187,15 @@ class BinarySearch(Benchmark):
                 logger.info(f"Format tolerance enabled, force the model reply to {formatted}.")
                 model.force(str(formatted))
 
-            if not isinstance(answer, Invalid):
-                prompt = self._get_prompt(answer)
-                answer_list.append(answer)
-                retry_cnt = 0
+            if isinstance(answer, Invalid):
+                prompt = "Invalid reply. You can only reply with a integer number between " \
+                        f"{self.min} and {self.max}. Try again." + prompt
+                retry_cnt += 1
                 continue
 
-            if retry_cnt == 0:
-                prompt = "Invalid reply. You can only reply with a integer number between " \
-                         f"{self.min} and {self.max}. Try again." + prompt
-            retry_cnt += 1
+            prompt = self._get_prompt(answer)
+            answer_list.append(answer)
+            retry_cnt = 0
 
         self.dialog_logger.info(Q=prompt)
 

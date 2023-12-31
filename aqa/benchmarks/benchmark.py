@@ -172,6 +172,7 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return self._pack_results(metrics, single_results, teacher_forcing_mode)
 
+    # TODO: Deprecated
     def test_multi_time(self, model, times, teacher_forcing_mode="l0"):
         # teacher forcing options:
         # "l0": no teacher forcing, context is cleared after each test
