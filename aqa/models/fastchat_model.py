@@ -47,6 +47,9 @@ class FastChatModel():
         self.max_new_tokens = max_new_tokens
         self.judge_sent_end = judge_sent_end
 
+        if num_gpus == "all":
+            num_gpus = torch.cuda.device_count()
+
         self.model, self.tokenizer = load_model(
             model_path,
             device=device,
