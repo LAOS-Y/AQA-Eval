@@ -53,6 +53,11 @@ class BinarySearch(Benchmark):
 
         return f"Right answer. The true number is equal to {guess}."
 
+    def _get_prompt_when_weak_tg(self):
+        return "Your output is not optimal. You should follow binary-search algorithm. " \
+              f"You can only reply with a integer number between {self.min} and {self.max}. " \
+               "Try again."
+
     def _refresh_teacher_qa(self):
         super(BinarySearch, self)._refresh_teacher_qa()
 
@@ -90,6 +95,24 @@ class BinarySearch(Benchmark):
         except ValueError:
             return FormatInvalid(guess)
 
+    def _check_algo(self, answer, answer_list):
+        '''
+        Check whether `answer` follows the binary-search algorithm
+        Will assume the previous answer in `answer_list` already follow the binary-search algorithm
+
+        Return
+        - boolean: if selected interface follows binary-search
+        '''
+        left = max(
+            [self.min] + [pre_answer for pre_answer in answer_list if pre_answer < self._target]
+        )
+        right = min(
+            [self.max + 1] + [pre_answer for pre_answer in answer_list if pre_answer > self._target]
+        )
+        mid = (left + right) // 2
+
+        return answer == mid
+
     def _calc_err(self, guess, target):
         # calculate the error between a single guess and target
         if isinstance(guess, Invalid):
@@ -120,16 +143,16 @@ class BinarySearch(Benchmark):
             "min_err": min(err_list),
         }
 
-        metrics["acc"] = sum(
-            [
-                answer == teacher_answer
-                for answer, teacher_answer in zip(answer_list, teacher_answer_list)
-            ]
-        ) / len(answer_list)
+        cnt = 0
+        for idx, answer in enumerate(answer_list):
+            if self._check_algo(answer, teacher_answer_list[:idx]):
+                cnt += 1
+
+        metrics["acc"] = cnt / len(answer_list)
 
         return metrics
 
-    def calc_metric_no_tf(self, answer_list, teacher_answer_list):
+    def calc_metric_no_tf(self, answer_list):
         if not len(answer_list):
             return {
                 "avg_err": 1.0,
@@ -148,21 +171,25 @@ class BinarySearch(Benchmark):
             "min_err": min(err_list),
         }
 
-        i = 0
-        for i, (answer, teacher_answer) in enumerate(zip(answer_list, teacher_answer_list)):
-            if answer != teacher_answer:
+        highest_cnt = 0
+        for i, answer in enumerate(answer_list):
+            if not self._check_algo(answer, answer_list[:i]):
                 break
-        metrics["acc"] = i / len(answer_list)
+            highest_cnt += 1
+        metrics["acc"] = highest_cnt / len(answer_list)
 
         return metrics
 
-    def _test_no_tf(self, model):
+    def _test_no_tf(self, model, weak_tg_chances=0):
         # test one time without teacher forcing
         answer = None
         answer_list = []
         prompt = "START"
 
         retry_cnt = 0
+        # for weak tg
+        weak_tg_cnt = 0
+        do_algo_check = weak_tg_chances > 0
 
         while (
             answer != self._target
@@ -189,9 +216,21 @@ class BinarySearch(Benchmark):
 
             if isinstance(answer, Invalid):
                 prompt = "Invalid reply. You can only reply with a integer number between " \
-                        f"{self.min} and {self.max}. Try again." + prompt
+                        f"{self.min} and {self.max}. Try again."
                 retry_cnt += 1
                 continue
+
+            if do_algo_check:
+                if weak_tg_cnt < weak_tg_chances:
+                    is_following_algo = self._check_algo(answer, answer_list)
+                    if not is_following_algo:
+                        weak_tg_cnt += 1
+                        prompt = self._get_prompt_when_weak_tg()
+                        continue
+
+                weak_tg_cnt = 0
+
+                do_algo_check = is_following_algo
 
             prompt = self._get_prompt(answer)
             answer_list.append(answer)
@@ -233,18 +272,16 @@ class BinarySearch(Benchmark):
 
         return answer_list, teacher_answer_list
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None):
+    def naive_test(self, model, teacher_forcing=False, weak_tg_chances=0, instruction=None):
         logger.info("Target number: {}".format(self._target))
 
         if teacher_forcing:
             answer_list, teacher_answer_list = self._test_tf(model)
             metric = self.calc_metric_tf(answer_list, teacher_answer_list)
         else:
-            # bs benchmark without tf still needs teacher answers for acc calculation
-            answer_list = self._test_no_tf(model)
-            self._refresh_teacher_qa()
-            teacher_answer_list = [a for _, a in self._teacher_qa_list[:-1]]
-            metric = self.calc_metric_no_tf(answer_list, teacher_answer_list)
+            teacher_answer_list = []
+            answer_list = self._test_no_tf(model, weak_tg_chances)
+            metric = self.calc_metric_no_tf(answer_list)
 
         result = self._get_result(
             metric, answer_list, teacher_answer_list,

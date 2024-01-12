@@ -1,3 +1,6 @@
+from copy import deepcopy
+
+
 def eval(config):
     # to avoid circular imports
     from aqa.benchmarks import build_benchmark
@@ -6,16 +9,11 @@ def eval(config):
     benchmark = build_benchmark(config)
     model = build_model(config)
 
-    times = config.EVAL.TIMES
-    num_exp = config.EVAL.NUM_EXAMPLES
-    tf = config.EVAL.TEACHER_FORCING
-    resume = config.EVAL.RESUME
+    eval_config = deepcopy(config.EVAL)
+    eval_config = dict({k.lower(): v for k, v in eval_config.items()})
 
     metric, full_result = benchmark.test_with_examples(
-        model, times,
-        num_examples=num_exp,
-        teacher_forcing=tf,
-        resume=resume
+        model, **eval_config
     )
 
     return metric, full_result

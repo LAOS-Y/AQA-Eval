@@ -237,7 +237,9 @@ class Benchmark(metaclass=abc.ABCMeta):
 
         return ckpt["single_results"], ckpt["teacher_qa_lists"]
 
-    def test_with_examples(self, model, times, num_examples=0, teacher_forcing=False, resume=False):
+    def test_with_examples(
+        self, model, times, num_examples=0, teacher_forcing=False, weak_tg_chances=0, resume=False
+    ):
         assert times <= len(self.test_cases), self.test_cases
         assert num_examples <= len(self.test_cases), self.test_cases
 
@@ -261,7 +263,7 @@ class Benchmark(metaclass=abc.ABCMeta):
             )
 
             metric, single_result = self.naive_test(
-                model, teacher_forcing, self.default_instruction,
+                model, teacher_forcing, weak_tg_chances, self.default_instruction
             )
             logger.info(f"Evaluation metric #{i}: {metric}")
 
@@ -325,7 +327,7 @@ class Benchmark(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def _test_no_tf(self, model):
+    def _test_no_tf(self, model, weak_tg_chances=0):
         pass
 
     @abc.abstractmethod
@@ -333,5 +335,5 @@ class Benchmark(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def naive_test(self, model, teacher_forcing=False, instruction=None):
+    def naive_test(self, model, teacher_forcing=False, weak_tg_chances=0, instruction=None):
         pass

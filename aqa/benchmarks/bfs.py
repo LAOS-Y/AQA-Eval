@@ -62,6 +62,16 @@ class BFS(TraverseGraph):
 
         return prompt
 
+    def _get_prompt_when_weak_tg(self, valid_nodes):
+        prompt = "Your output is not optimal. You should follow breadth-first-search algorithm."
+        prompt += " Try again. You can only reply with a " \
+                  "integer number indicting the node adjacent to the visited node."
+        if self.mcq:
+            valid_nodes = [str(node) for node in valid_nodes]
+            prompt += " Valid nodes: {}.".format(", ".join(valid_nodes))
+
+        return prompt
+
     def _init_queues(self):
         return self._get_adj_nodes(self._start_node), []
 

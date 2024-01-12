@@ -41,8 +41,6 @@ class TraverseGraph(Benchmark):
             self._graph.add_nodes_from(test_case["nodes"])
             self._graph.add_edges_from(test_case["edges"])
 
-        logger.info("nodes: {}, edges: {}".format(self._graph.nodes, self._graph.edges))
-
     def _get_adj_nodes(self, curr_node):
         return [n for _, n in self._graph.edges(curr_node)]
 
@@ -80,6 +78,9 @@ class TraverseGraph(Benchmark):
         return prompt
 
     def _get_prompt_when_invalid(self, valid_nodes):
+        raise NotImplementedError
+
+    def _get_prompt_when_weak_tg(self, valid_nodes):
         raise NotImplementedError
 
     def _refresh_teacher_qa(self):
@@ -158,7 +159,7 @@ class TraverseGraph(Benchmark):
 
         decov_list = [self._calc_decoverage([self._start_node])]
         highest_cnt = 0
-        check_algo_flag = True
+        is_following_algo = True
 
         stack_or_queue = self._init_stack_or_queue()
 
@@ -168,12 +169,12 @@ class TraverseGraph(Benchmark):
                     f"Only the last node can be Invalid without teacher forcing. {node_history}"
                 break
 
-            # `check_algo_flag` will remain `True` until `model` stops following bfs
-            if check_algo_flag:
-                check_algo_flag = self._check_algo(
+            # `is_following_algo` will remain `True` until `model` stops following bfs
+            if is_following_algo:
+                is_following_algo = self._check_algo(
                     node, stack_or_queue, [self._start_node] + node_history[:idx]
                 )
-            if check_algo_flag:
+            if is_following_algo:
                 highest_cnt = idx + 1
                 stack_or_queue = self._update_stack_or_queue(
                     node, stack_or_queue, [self._start_node] + node_history[:idx]
@@ -210,11 +211,11 @@ class TraverseGraph(Benchmark):
         for idx, (node, teacher_node) in enumerate(
             zip(node_history, teacher_node_history)
         ):
-            check_algo_flag = self._check_algo(
+            is_following_algo = self._check_algo(
                 node, stack_or_queue, [self._start_node] + teacher_node_history[:idx]
             )
 
-            if check_algo_flag:
+            if is_following_algo:
                 cnt += 1
 
             stack_or_queue = self._update_stack_or_queue(
@@ -246,7 +247,7 @@ class TraverseGraph(Benchmark):
         }
         return metric
 
-    def _test_no_tf(self, model):
+    def _test_no_tf(self, model, weak_tg_chances=0):
         '''
         Return:
         - accuracy: percentage of node selected following the traversing algorithm (BFS/DFS)
@@ -257,6 +258,10 @@ class TraverseGraph(Benchmark):
         node_history = []
 
         retry_cnt = 0
+        # for weak tg
+        weak_tg_cnt = 0
+        do_algo_check = weak_tg_chances > 0
+        stack_or_queue = self._init_stack_or_queue()
 
         valid_nodes = self._get_valid_nodes(self._start_node, [])
 
@@ -285,6 +290,25 @@ class TraverseGraph(Benchmark):
                 prompt = self._get_prompt_when_invalid(valid_nodes)
                 retry_cnt += 1
                 continue
+
+            if do_algo_check:
+                if weak_tg_cnt < weak_tg_chances:
+                    is_following_algo = self._check_algo(
+                        next_node, stack_or_queue, [self._start_node] + node_history
+                    )
+                    if not is_following_algo:
+                        weak_tg_cnt += 1
+                        prompt = self._get_prompt_when_weak_tg(valid_nodes)
+                        continue
+
+                weak_tg_cnt = 0
+
+                do_algo_check = is_following_algo
+
+                if do_algo_check:
+                    stack_or_queue = self._update_stack_or_queue(
+                        next_node, stack_or_queue, [self._start_node] + node_history
+                    )
 
             valid_nodes = self._get_valid_nodes(next_node, [self._start_node] + node_history)
             prompt = self._get_prompt(next_node, [self._start_node] + node_history)
@@ -330,13 +354,15 @@ class TraverseGraph(Benchmark):
 
         return node_history, teacher_node_history, optim_decov_sum
 
-    def naive_test(self, model, teacher_forcing=False, instruction=None):
+    def naive_test(self, model, teacher_forcing=False, weak_tg_chances=0, instruction=None):
+        logger.info("Nodes: {}, Edges: {}".format(self._graph.nodes, self._graph.edges))
+
         if teacher_forcing:
             model_node_history, teacher_node_history, optim_decov_sum = self._test_tf(model)
             metric = self.calc_metric_tf(model_node_history, teacher_node_history)
         else:
             teacher_node_history = []
-            model_node_history = self._test_no_tf(model)
+            model_node_history = self._test_no_tf(model, weak_tg_chances)
             metric = self.calc_metric_no_tf(model_node_history)
 
         result = self._get_result(

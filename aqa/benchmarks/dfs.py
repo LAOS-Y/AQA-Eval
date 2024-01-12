@@ -52,6 +52,16 @@ class DFS(TraverseGraph):
 
         return prompt
 
+    def _get_prompt_when_weak_tg(self, valid_nodes):
+        prompt = "Your output is not optimal. You should follow depth-first-search algorithm."
+        prompt += " Try again. You can only reply with a " \
+                  "integer number indicting the node adjacent to the current node."
+        if self.mcq:
+            valid_nodes = [str(node) for node in valid_nodes]
+            prompt += " Valid nodes: {}.".format(", ".join(valid_nodes))
+
+        return prompt
+
     def _init_stack(self):
         return [self._start_node]
 
