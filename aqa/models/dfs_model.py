@@ -28,7 +28,7 @@ class DFSModel():
         unvisited_adj_nodes = [node for node in adj_nodes if node not in set(self.history)]
 
         if len(unvisited_adj_nodes):
-            next_node = random.choice(unvisited_adj_nodes)
+            next_node = unvisited_adj_nodes[0]
             self.history.append(next_node)
             self.node_stack.append(next_node)
 
