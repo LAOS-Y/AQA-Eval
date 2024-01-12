@@ -140,6 +140,8 @@ class FastChatModel():
 
     def revoke(self, n=1):
         assert 0 <= n and n <= len(self.history)
+        if n == 0:
+            return
         self.history = self.history[:-n]
         self.conv.messages = self.conv.messages[:-2 * n]
 
