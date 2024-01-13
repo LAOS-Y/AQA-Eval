@@ -4,6 +4,7 @@ from .build import build_model
 from .chatgpt import ChatGPT
 from .fastchat_model import FastChatModel
 from .llama import Llama
+from .openai import OpenAI
 from .simple_model import SimpleModel
 from .dfs_model import DFSModel
 from .bfs_model import BFSModel
