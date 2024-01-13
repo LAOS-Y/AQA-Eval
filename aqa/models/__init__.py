@@ -1,7 +1,6 @@
 from .bloomz import BLOOMZ
 from .bs_model import BSModel
 from .build import build_model
-from .chatgpt import ChatGPT
 from .fastchat_model import FastChatModel
 from .llama import Llama
 from .openai import OpenAI
