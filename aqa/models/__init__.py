@@ -3,6 +3,7 @@ from .bs_model import BSModel
 from .build import build_model
 from .fastchat_model import FastChatModel
 from .llama import Llama
+from .mistral import Mistral
 from .openai import OpenAI
 from .simple_model import SimpleModel
 from .dfs_model import DFSModel
