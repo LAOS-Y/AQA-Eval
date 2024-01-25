@@ -53,7 +53,7 @@ class OpenAI():
         response = self.completion_func(
             model=self.model_name,
             messages=self.messages,
-            max_tokens=300,
+            max_tokens=128,
             temperature=0.0,
             seed=42
         )

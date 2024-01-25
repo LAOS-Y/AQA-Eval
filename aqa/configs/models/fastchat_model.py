@@ -5,9 +5,9 @@ from aqa.configs import Config
 FASTCHAT_MODEL_CONFIG = Config(
     NAME="FastChatModel",
     DEVICE="cuda",
-    NUM_GPUS=1,
+    NUM_GPUS="all",
     MAX_GPU_MEMORY=None,
-    DTYPE=None,
+    DTYPE="auto",
     LOAD_8BIT=False,
     CPU_OFFLOADING=False,
     CONV_TEMPLATE=None,
@@ -43,9 +43,9 @@ LLAMA2_13B_CHAT_CONFIG = deepcopy(FASTCHAT_MODEL_CONFIG)
 LLAMA2_13B_CHAT_CONFIG.update(MODEL_PATH="meta-llama/Llama-2-13b-chat-hf")
 
 LLAMA2_70B_CONFIG = deepcopy(FASTCHAT_MODEL_CONFIG)
-LLAMA2_70B_CONFIG.update(MODEL_PATH="meta-llama/Llama-2-70b-hf", NUM_GPUS=4)
+LLAMA2_70B_CONFIG.update(MODEL_PATH="meta-llama/Llama-2-70b-hf")
 
 LLAMA2_70B_CHAT_CONFIG = deepcopy(FASTCHAT_MODEL_CONFIG)
-LLAMA2_70B_CHAT_CONFIG.update(MODEL_PATH="meta-llama/Llama-2-70b-chat-hf", NUM_GPUS=2)
+LLAMA2_70B_CHAT_CONFIG.update(MODEL_PATH="meta-llama/Llama-2-70b-chat-hf")
 
 __all__ = [k for k in globals().keys() if "_CONFIG" in k]

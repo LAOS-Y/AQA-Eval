@@ -1,5 +1,29 @@
+from ast import literal_eval
 from itertools import chain
 import json
+
+
+def _decode_cfg_value(value):
+    """
+    Decodes a raw config value (e.g., from a yaml config files or command
+    line argument) into a Python object.
+    If the value is a dict, it will be interpreted as a new CfgNode.
+    If the value is a str, it will be evaluated as literals.
+    Otherwise it is returned as-is.
+
+    Args:
+        value (dict or str): value to be decoded
+    """
+    if isinstance(value, str):
+        try:
+            value = literal_eval(value)
+        except (ValueError, SyntaxError):
+            pass
+
+    if isinstance(value, dict):
+        return Config(value)
+    else:
+        return value
 
 
 class Config(dict):
@@ -57,7 +81,7 @@ class Config(dict):
     def __str__(self):
         return json.dumps(self, indent=" " * 4)
 
-    def update_from_list(self, items, auto_type_conversion=True):
+    def update_from_list(self, items):
         for key, value in items:
             single_keys = key.split(".")
 
@@ -65,8 +89,6 @@ class Config(dict):
             for single_key in single_keys[:-1]:
                 obj = obj[single_key]
 
-            if auto_type_conversion:
-                dtype = type(obj[single_keys[-1]])
-                value = dtype(value)
+            value = _decode_cfg_value(value)
 
             obj[single_keys[-1]] = value
