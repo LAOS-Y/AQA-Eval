@@ -19,3 +19,15 @@ DFS_CONFIG.update(
     MCQ=False,
     PROVIDE_STATE=False,
 )
+
+HARD_BFS_CONFIG = deepcopy(BFS_CONFIG)
+HARD_BFS_CONFIG.update(
+    MAX_STEP=30,
+    NODE_NUM=25,
+)
+
+HARD_DFS_CONFIG = deepcopy(DFS_CONFIG)
+HARD_DFS_CONFIG.update(
+    MAX_STEP=30,
+    NODE_NUM=13,
+)
