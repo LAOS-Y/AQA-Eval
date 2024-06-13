@@ -7,6 +7,7 @@ from .dfs_model import DFSModel
 from .gemini import Gemini
 from .fastchat_model import FastChatModel
 from .llama import Llama
+from .llama3 import Llama3
 from .mistral import Mistral
 from .openai import OpenAI
 from .simple_model import SimpleModel

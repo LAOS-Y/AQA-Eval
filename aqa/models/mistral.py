@@ -9,7 +9,15 @@ class Mistral():
     def __init__(self, model_id, max_new_tokens=128):
         self.model_id = model_id
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
+        if "Mixtral" in self.model_id:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                attn_implementation="flash_attention_2",
+                torch_dtype=torch.float16,
+                device_map="auto"
+            )
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(model_id, device_map="auto")
         self.max_new_tokens = max_new_tokens
         self.reset()
 
@@ -46,10 +54,19 @@ class Mistral():
         messages.append({"role": "user", "content": inp})
 
         if self.instruction is not None:
+            # messages[0]["content"] = f"<<SYS>>\n{inp}\n<</SYS>>\n\n" + messages[0]["content"]
             messages.insert(0, {"role": "user", "content": self.instruction})
             messages.insert(1, {"role": "assistant", "content": ""})
 
+        # if "Mixtral" not in self.model_id:
         return self.tokenizer.apply_chat_template(messages, return_tensors="pt")
+
+        # text = "<s>"
+        # for q, a in zip(messages[::2], messages[1::2]):
+        #     text += f" [INST] {q['content']} [/INST] {a['content']}</s>"
+
+        # text += f" [INST] {messages[-1]['content']} [/INST] "
+        # return self.tokenizer.encode(text, return_tensors="pt")
 
     def _tokenize(self, text):
         return self.tokenizer.encode(text, add_special_tokens=False)
